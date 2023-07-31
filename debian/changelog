@@ -1,5 +1,5 @@
-template-repository (1.0-1) unstable; urgency=medium
+fastfetch (1.12.2-0deepin) unstable; urgency=medium
 
-  * Initial release
+  * Initial Release.
 
- -- Tsic404 <liuheng@deepin.org>  Sat, 28 Jan 2023 13:46:49 +0800
+ -- xiangzelong <xiangzelong@deepin.org>  Mon, 31 Jul 2023 13:30:50 +0800
