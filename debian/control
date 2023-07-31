@@ -1,5 +1,5 @@
 Source: fastfetch
-Section: utilss
+Section: utils
 Priority: optional
 Maintainer: xiangzelong <xiangzelong@deepin.org>
 Build-Depends: debhelper-compat (= 13),
