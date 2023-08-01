@@ -1,3 +1,9 @@
+fastfetch (1.12.2-0deepin1) unstable; urgency=medium
+
+  * fix byteUsed not correctly in ext4
+
+ -- xiangzelong <xiangzelong@deepin.org>  Tue, 01 Aug 2023 16:47:34 +0800
+
 fastfetch (1.12.2-0deepin) unstable; urgency=medium
 
   * Initial Release.
