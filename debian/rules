@@ -17,6 +17,10 @@
 %:
 	dh $@
 
+override_dh_auto_configure:
+	dh_auto_configure -- \
+	-DENABLE_SYSTEM_YYJSON=ON \
+
 
 # dh_make generated override targets
 # This is example for Cmake (See https://bugs.debian.org/641051 )

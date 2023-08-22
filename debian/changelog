@@ -1,3 +1,9 @@
+fastfetch (2.0.1-0deepin1) stable; urgency=medium
+
+  * enable system yyjson
+
+ -- xiangzelong <xiangzelong@deepin.org>  Tue, 22 Aug 2023 17:39:04 +0800
+
 fastfetch (2.0.1-0deepin) stable; urgency=medium
 
   * new upstream release

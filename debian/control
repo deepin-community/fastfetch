@@ -21,6 +21,7 @@ Build-Depends: debhelper-compat (= 13),
                 libnm-dev,
                 libpulse-dev,
                 cmake,
+                yyjson-dev,
 Standards-Version: 4.6.2.0
 Homepage: https://github.com/fastfetch-cli/fastfetch
 
