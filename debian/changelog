@@ -1,3 +1,12 @@
+fastfetch (2.0.1-0deepin) stable; urgency=medium
+
+  * new upstream release
+  * ntroduces a new configuration file format: JSON config
+  * Add LM (Login Manager) module. 
+  * Fix used spaces calculation (Disk, Linux / BSD / macOS)
+
+ -- xiangzelong <xiangzelong@deepin.org>  Tue, 22 Aug 2023 12:47:26 +0800
+
 fastfetch (1.12.2-0deepin1) unstable; urgency=medium
 
   * fix byteUsed not correctly in ext4

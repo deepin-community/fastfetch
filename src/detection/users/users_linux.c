@@ -1,7 +1,7 @@
 #include "fastfetch.h"
 #include "users.h"
 
-#if FF_HAVE_UTMPX_H
+#if __has_include(<utmpx.h>)
     #include <utmpx.h>
 #else
     //for Android compatibility
@@ -24,7 +24,7 @@ next:
 
         FF_LIST_FOR_EACH(FFstrbuf, user, *users)
         {
-            if(ffStrbufCompS(user, n->ut_user) == 0)
+            if(ffStrbufEqualS(user, n->ut_user))
                 goto next;
         }
 

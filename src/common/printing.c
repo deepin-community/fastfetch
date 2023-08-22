@@ -2,22 +2,28 @@
 #include "common/printing.h"
 #include "util/textModifier.h"
 
-void ffPrintLogoAndKey(FFinstance* instance, const char* moduleName, uint8_t moduleIndex, const FFstrbuf* customKeyFormat)
+void ffPrintLogoAndKey(const char* moduleName, uint8_t moduleIndex, const FFModuleArgs* moduleArgs, FFPrintType printType)
 {
-    ffLogoPrintLine(instance);
+    ffLogoPrintLine();
 
     //This is used by --set-keyless, in this case we wan't neither the module name nor the separator
     if(moduleName == NULL)
         return;
 
-    if(!instance->config.pipe)
+    if(!instance.config.pipe)
     {
-        fputs(FASTFETCH_TEXT_MODIFIER_RESET FASTFETCH_TEXT_MODIFIER_BOLT, stdout);
-        ffPrintColor(&instance->config.colorKeys);
+        fputs(FASTFETCH_TEXT_MODIFIER_RESET, stdout);
+        if (instance.config.brightColor)
+            fputs(FASTFETCH_TEXT_MODIFIER_BOLT, stdout);
+
+        if(moduleArgs && !(printType & FF_PRINT_TYPE_NO_CUSTOM_KEY_COLOR) && moduleArgs->keyColor.length > 0)
+            ffPrintColor(&moduleArgs->keyColor);
+        else
+            ffPrintColor(&instance.config.colorKeys);
     }
 
     //NULL check is required for modules with custom keys, e.g. disk with the folder path
-    if(customKeyFormat == NULL || customKeyFormat->length == 0)
+    if((printType & FF_PRINT_TYPE_NO_CUSTOM_KEY) || !moduleArgs || moduleArgs->key.length == 0)
     {
         fputs(moduleName, stdout);
 
@@ -26,93 +32,76 @@ void ffPrintLogoAndKey(FFinstance* instance, const char* moduleName, uint8_t mod
     }
     else
     {
-        FFstrbuf key;
-        ffStrbufInit(&key);
-        ffParseFormatString(&key, customKeyFormat, 1, (FFformatarg[]){
+        FF_STRBUF_AUTO_DESTROY key = ffStrbufCreate();
+        ffParseFormatString(&key, &moduleArgs->key, 1, (FFformatarg[]){
             {FF_FORMAT_ARG_TYPE_UINT8, &moduleIndex}
         });
-        ffPrintUserString(key.chars);
-        ffStrbufDestroy(&key);
+        ffStrbufWriteTo(&key, stdout);
     }
 
-    if(!instance->config.pipe)
+    if(!instance.config.pipe)
         fputs(FASTFETCH_TEXT_MODIFIER_RESET, stdout);
 
-    ffStrbufWriteTo(&instance->config.separator, stdout);
+    ffStrbufWriteTo(&instance.config.keyValueSeparator, stdout);
 
-    if(!instance->config.pipe)
+    if(!instance.config.pipe)
         fputs(FASTFETCH_TEXT_MODIFIER_RESET, stdout);
+
+
+    if (!instance.config.pipe && !(printType & FF_PRINT_TYPE_NO_CUSTOM_KEY_WIDTH))
+    {
+        uint32_t keyWidth = moduleArgs && moduleArgs->keyWidth > 0 ? moduleArgs->keyWidth : instance.config.keyWidth;
+        if (keyWidth > 0)
+            printf("\e[%uG", (unsigned) (keyWidth + instance.state.logoWidth));
+    }
 }
 
-void ffPrintFormatString(FFinstance* instance, const char* moduleName, uint8_t moduleIndex, const FFstrbuf* customKeyFormat, const FFstrbuf* format, uint32_t numArgs, const FFformatarg* arguments)
+void ffPrintFormatString(const char* moduleName, uint8_t moduleIndex, const FFModuleArgs* moduleArgs, FFPrintType printType, uint32_t numArgs, const FFformatarg* arguments)
 {
-    FFstrbuf buffer;
-    ffStrbufInitA(&buffer, 256);
-
-    ffParseFormatString(&buffer, format, numArgs, arguments);
+    FF_STRBUF_AUTO_DESTROY buffer = ffStrbufCreate();
+    if (moduleArgs)
+        ffParseFormatString(&buffer, &moduleArgs->outputFormat, numArgs, arguments);
+    else
+        ffStrbufAppendS(&buffer, "unknown");
 
     if(buffer.length > 0)
     {
-        ffPrintLogoAndKey(instance, moduleName, moduleIndex, customKeyFormat);
-        ffPrintUserString(buffer.chars);
-        putchar('\n');
+        ffPrintLogoAndKey(moduleName, moduleIndex, moduleArgs, printType);
+        ffStrbufPutTo(&buffer, stdout);
     }
-
-    ffStrbufDestroy(&buffer);
 }
 
-void ffPrintFormat(FFinstance* instance, const char* moduleName, uint8_t moduleIndex, const FFModuleArgs* moduleArgs, uint32_t numArgs, const FFformatarg* arguments)
+static void printError(const char* moduleName, uint8_t moduleIndex, const FFModuleArgs* moduleArgs, FFPrintType printType, const char* message, va_list arguments)
 {
-    ffPrintFormatString(instance, moduleName, moduleIndex, &moduleArgs->key, &moduleArgs->outputFormat, numArgs, arguments);
-}
-
-static void printError(FFinstance* instance, const char* moduleName, uint8_t moduleIndex, const FFstrbuf* customKeyFormat, const FFstrbuf* customErrorFormat, const char* message, va_list arguments)
-{
-    bool hasCustomErrorFormat = customErrorFormat != NULL && customErrorFormat->length > 0;
-    if(!hasCustomErrorFormat && !instance->config.showErrors)
+    if(!instance.config.showErrors)
         return;
 
-    if(hasCustomErrorFormat)
-    {
-        FFstrbuf error;
-        ffStrbufInit(&error);
-        ffStrbufAppendVF(&error, message, arguments);
+    ffPrintLogoAndKey(moduleName, moduleIndex, moduleArgs, printType);
 
-        ffPrintFormatString(instance, moduleName, moduleIndex, customKeyFormat, customErrorFormat, 1, (FFformatarg[]) {
-            {FF_FORMAT_ARG_TYPE_STRBUF, &error}
-        });
+    if(!instance.config.pipe)
+        fputs(FASTFETCH_TEXT_MODIFIER_ERROR, stdout);
 
-        ffStrbufDestroy(&error);
-    }
-    else
-    {
-        ffPrintLogoAndKey(instance, moduleName, moduleIndex, customKeyFormat);
+    vprintf(message, arguments);
 
-        if(!instance->config.pipe)
-            fputs(FASTFETCH_TEXT_MODIFIER_ERROR, stdout);
+    if(!instance.config.pipe)
+        fputs(FASTFETCH_TEXT_MODIFIER_RESET, stdout);
 
-        vprintf(message, arguments);
-
-        if(!instance->config.pipe)
-            fputs(FASTFETCH_TEXT_MODIFIER_RESET, stdout);
-
-        putchar('\n');
-    }
+    putchar('\n');
 }
 
-void ffPrintErrorString(FFinstance* instance, const char* moduleName, uint8_t moduleIndex, const FFstrbuf* customKeyFormat, const FFstrbuf* customErrorFormat, const char* message, ...)
+void ffPrintErrorString(const char* moduleName, uint8_t moduleIndex, const FFModuleArgs* moduleArgs, FFPrintType printType, const char* message, ...)
 {
     va_list arguments;
     va_start(arguments, message);
-    printError(instance, moduleName, moduleIndex, customKeyFormat, customErrorFormat, message, arguments);
+    printError(moduleName, moduleIndex, moduleArgs, printType, message, arguments);
     va_end(arguments);
 }
 
-void ffPrintError(FFinstance* instance, const char* moduleName, uint8_t moduleIndex, const FFModuleArgs* moduleArgs, const char* message, ...)
+void ffPrintError(const char* moduleName, uint8_t moduleIndex, const FFModuleArgs* moduleArgs, const char* message, ...)
 {
     va_list arguments;
     va_start(arguments, message);
-    printError(instance, moduleName, moduleIndex, &moduleArgs->key, &moduleArgs->errorFormat, message, arguments);
+    printError(moduleName, moduleIndex, moduleArgs, FF_PRINT_TYPE_DEFAULT, message, arguments);
     va_end(arguments);
 }
 
@@ -140,35 +129,4 @@ void ffPrintCharTimes(char c, uint32_t times)
     uint32_t remaining = times % sizeof(str);
     if(remaining > 0)
         fwrite(str, 1, remaining, stdout);
-}
-
-void ffPrintUserString(const char* value)
-{
-    while(*value != '\0')
-    {
-        if(*value != '\\')
-        {
-            putchar(*value);
-            ++value;
-            continue;
-        }
-
-        ++value;
-
-        if(*value == 'n')
-            putchar('\n');
-        else if(*value == 't')
-            putchar('\t');
-        else if(*value == 'e')
-            putchar('\e');
-        else if(*value == '\\')
-            putchar('\\');
-        else
-        {
-            putchar('\\');
-            putchar(*value);
-        }
-
-        ++value;
-    }
 }
