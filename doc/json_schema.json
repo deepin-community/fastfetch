@@ -343,6 +343,8 @@
                 "sizeNdigits": {
                     "type": "integer",
                     "title": "Set the number of digits to keep after the decimal point when formatting sizes",
+                    "minimum": 0,
+                    "maximum": 9,
                     "default": 2
                 },
                 "sizeMaxPrefix": {
@@ -388,8 +390,15 @@
                     "type": "number",
                     "title": "Set the percentage output type. 1 for percentage number, 2 for bar, 3 for both, 6 for bar only, 9 for colored number",
                     "minimum": 0,
-                    "maximum": 9,
+                    "maximum": 255,
                     "default": 1
+                },
+                "percentNdigits": {
+                    "type": "number",
+                    "title": "Set the number of digits to keep after the decimal point when formatting percentage numbers",
+                    "minimum": 0,
+                    "maximum": 9,
+                    "default": 0
                 },
                 "noBuffer": {
                     "type": "boolean",
@@ -875,9 +884,19 @@
                                         "title": "Set if subvolumes should be printed",
                                         "default": false
                                     },
+                                    "showReadOnly": {
+                                        "type": "boolean",
+                                        "title": "Set if read only volumes should be printed",
+                                        "default": false
+                                    },
                                     "showUnknown": {
                                         "type": "boolean",
                                         "title": "Set if unknown (unable to detect sizes) volumes should be printed",
+                                        "default": false
+                                    },
+                                    "useAvailable": {
+                                        "type": "boolean",
+                                        "title": "Use f_bavail (lpFreeBytesAvailableToCaller for Windows) instead of f_bfree to calculate used bytes",
                                         "default": false
                                     },
                                     "key": {

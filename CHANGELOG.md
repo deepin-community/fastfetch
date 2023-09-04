@@ -1,3 +1,43 @@
+# 2.0.5
+
+Bugfixes:
+* Fix segfault when using libxrandr (#544, Display, Linux)
+* Don't print 0px (#544, Cursor)
+
+Features:
+* Add option `--disk-use-available` (#543)
+* Add option `--disk-show-readonly`
+
+# 2.0.4
+
+Bugfixes:
+* Fix building on 32-bit FreeBSD (Memory, BSD)
+* Fix `--file-raw` doesn't work (Logo)
+
+Features:
+* Trait `-` as an alias for `/dev/stdin`. Available for `--file`, `--file-raw` and `--raw` (Logo)
+
+# 2.0.3
+
+Bugfixes:
+* Fix typo in config parsing for --color-title (#534)
+* Fix percent formatting for `--*-format` (#535)
+* Fix loading presets for homebrew (macOS)
+
+Features:
+* Add option `--percent-ndigits`
+* Add command flag `--config` as an alias of `--load-config`
+* Windows packages now include presets (Windows)
+
+# 2.0.2
+
+Bugfixes:
+* Workarund [a compiler bug of GCC](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=85282) (Windows)
+* Fix presets not detected by file name (#529)
+
+Logo:
+* Add Tuxedo OS
+
 # 2.0.1
 
 First stable release of Fastfetch V2

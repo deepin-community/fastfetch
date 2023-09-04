@@ -1,3 +1,11 @@
+fastfetch (2.0.5-0deepin) stable; urgency=medium
+
+  * New upstream version
+  * Add option `--disk-use-available` (#543)
+  * Add option `--disk-show-readonly` 
+
+ -- xiangzelong <xiangzelong@deepin.com>  Mon, 04 Sep 2023 09:49:08 +0800
+
 fastfetch (2.0.1-0deepin1) stable; urgency=medium
 
   * enable system yyjson

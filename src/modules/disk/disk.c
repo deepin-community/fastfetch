@@ -79,12 +79,22 @@ static void printDisk(FFDiskOptions* options, const FFDisk* disk)
             if(disk->filesystem.length)
                 ffStrbufAppendF(&str, "- %s ", disk->filesystem.chars);
 
-            if(disk->type & FF_DISK_TYPE_EXTERNAL_BIT)
-                ffStrbufAppendS(&str, "[External]");
-            else if(disk->type & FF_DISK_TYPE_SUBVOLUME_BIT)
-                ffStrbufAppendS(&str, "[Subvolume]");
-            else if(disk->type & FF_DISK_TYPE_HIDDEN_BIT)
-                ffStrbufAppendS(&str, "[Hidden]");
+            ffStrbufAppendC(&str, '[');
+            if(disk->type & FF_DISK_VOLUME_TYPE_EXTERNAL_BIT)
+                ffStrbufAppendS(&str, "External, ");
+            if(disk->type & FF_DISK_VOLUME_TYPE_SUBVOLUME_BIT)
+                ffStrbufAppendS(&str, "Subvolume, ");
+            if(disk->type & FF_DISK_VOLUME_TYPE_HIDDEN_BIT)
+                ffStrbufAppendS(&str, "Hidden, ");
+            if(disk->type & FF_DISK_VOLUME_TYPE_READONLY_BIT)
+                ffStrbufAppendS(&str, "Read-only, ");
+            if (str.chars[str.length - 1] == '[')
+                ffStrbufSubstrBefore(&str, str.length - 1);
+            else
+            {
+                ffStrbufTrimRight(&str, ' ');
+                str.chars[str.length - 1] = ']';
+            }
         }
 
         ffStrbufTrimRight(&str, ' ');
@@ -92,21 +102,27 @@ static void printDisk(FFDiskOptions* options, const FFDisk* disk)
     }
     else
     {
-        uint8_t filesPercentage = disk->filesTotal > 0 ? (uint8_t) (((double) disk->filesUsed / (double) disk->filesTotal) * 100.0) : 0;
+        FF_STRBUF_AUTO_DESTROY bytesPercentageStr = ffStrbufCreate();
+        ffAppendPercentNum(&bytesPercentageStr, bytesPercentage, 50, 80, false);
+        FF_STRBUF_AUTO_DESTROY filesPercentageStr = ffStrbufCreate();
+        double filesPercentage = disk->filesTotal > 0 ? ((double) disk->filesUsed / (double) disk->filesTotal) * 100.0 : 0;
+        ffAppendPercentNum(&filesPercentageStr, filesPercentage, 50, 80, false);
 
-        bool isExternal = !!(disk->type & FF_DISK_TYPE_EXTERNAL_BIT);
-        bool isHidden = !!(disk->type & FF_DISK_TYPE_HIDDEN_BIT);
+        bool isExternal = !!(disk->type & FF_DISK_VOLUME_TYPE_EXTERNAL_BIT);
+        bool isHidden = !!(disk->type & FF_DISK_VOLUME_TYPE_HIDDEN_BIT);
+        bool isReadOnly = !!(disk->type & FF_DISK_VOLUME_TYPE_READONLY_BIT);
         ffPrintFormatString(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY, FF_DISK_NUM_FORMAT_ARGS, (FFformatarg[]){
             {FF_FORMAT_ARG_TYPE_STRBUF, &usedPretty},
             {FF_FORMAT_ARG_TYPE_STRBUF, &totalPretty},
-            {FF_FORMAT_ARG_TYPE_UINT8, &bytesPercentage},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &bytesPercentageStr},
             {FF_FORMAT_ARG_TYPE_UINT, &disk->filesUsed},
             {FF_FORMAT_ARG_TYPE_UINT, &disk->filesTotal},
-            {FF_FORMAT_ARG_TYPE_UINT8, &filesPercentage},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &filesPercentageStr},
             {FF_FORMAT_ARG_TYPE_BOOL, &isExternal},
             {FF_FORMAT_ARG_TYPE_BOOL, &isHidden},
             {FF_FORMAT_ARG_TYPE_STRBUF, &disk->filesystem},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &disk->name}
+            {FF_FORMAT_ARG_TYPE_STRBUF, &disk->name},
+            {FF_FORMAT_ARG_TYPE_BOOL, &isReadOnly},
         });
     }
 }
@@ -152,7 +168,7 @@ static void printAutodetected(FFDiskOptions* options, const FFlist* disks)
 {
     FF_LIST_FOR_EACH(FFDisk, disk, *disks)
     {
-        if(!(disk->type & options->showTypes))
+        if(disk->type & ~options->showTypes)
             continue;
 
         printDisk(options, disk);
@@ -162,7 +178,7 @@ static void printAutodetected(FFDiskOptions* options, const FFlist* disks)
 void ffPrintDisk(FFDiskOptions* options)
 {
     FF_LIST_AUTO_DESTROY disks = ffListCreate(sizeof (FFDisk));
-    const char* error = ffDetectDisks(&disks);
+    const char* error = ffDetectDisks(options, &disks);
 
     if(error)
     {
@@ -190,7 +206,8 @@ void ffInitDiskOptions(FFDiskOptions* options)
     ffOptionInitModuleArg(&options->moduleArgs);
 
     ffStrbufInit(&options->folders);
-    options->showTypes = FF_DISK_TYPE_REGULAR_BIT | FF_DISK_TYPE_EXTERNAL_BIT;
+    options->showTypes = FF_DISK_VOLUME_TYPE_REGULAR_BIT | FF_DISK_VOLUME_TYPE_EXTERNAL_BIT | FF_DISK_VOLUME_TYPE_READONLY_BIT;
+    options->calcType = FF_DISK_CALC_TYPE_FREE;
 }
 
 bool ffParseDiskCommandOptions(FFDiskOptions* options, const char* key, const char* value)
@@ -209,45 +226,63 @@ bool ffParseDiskCommandOptions(FFDiskOptions* options, const char* key, const ch
     if (ffStrEqualsIgnCase(subKey, "show-regular"))
     {
         if (ffOptionParseBoolean(value))
-            options->showTypes |= FF_DISK_TYPE_REGULAR_BIT;
+            options->showTypes |= FF_DISK_VOLUME_TYPE_REGULAR_BIT;
         else
-            options->showTypes &= ~FF_DISK_TYPE_REGULAR_BIT;
+            options->showTypes &= ~FF_DISK_VOLUME_TYPE_REGULAR_BIT;
         return true;
     }
 
     if (ffStrEqualsIgnCase(subKey, "show-external"))
     {
         if (ffOptionParseBoolean(value))
-            options->showTypes |= FF_DISK_TYPE_EXTERNAL_BIT;
+            options->showTypes |= FF_DISK_VOLUME_TYPE_EXTERNAL_BIT;
         else
-            options->showTypes &= ~FF_DISK_TYPE_EXTERNAL_BIT;
+            options->showTypes &= ~FF_DISK_VOLUME_TYPE_EXTERNAL_BIT;
         return true;
     }
 
     if (ffStrEqualsIgnCase(subKey, "show-hidden"))
     {
         if (ffOptionParseBoolean(value))
-            options->showTypes |= FF_DISK_TYPE_HIDDEN_BIT;
+            options->showTypes |= FF_DISK_VOLUME_TYPE_HIDDEN_BIT;
         else
-            options->showTypes &= ~FF_DISK_TYPE_HIDDEN_BIT;
+            options->showTypes &= ~FF_DISK_VOLUME_TYPE_HIDDEN_BIT;
         return true;
     }
 
     if (ffStrEqualsIgnCase(subKey, "show-subvolumes"))
     {
         if (ffOptionParseBoolean(value))
-            options->showTypes |= FF_DISK_TYPE_SUBVOLUME_BIT;
+            options->showTypes |= FF_DISK_VOLUME_TYPE_SUBVOLUME_BIT;
         else
-            options->showTypes &= ~FF_DISK_TYPE_SUBVOLUME_BIT;
+            options->showTypes &= ~FF_DISK_VOLUME_TYPE_SUBVOLUME_BIT;
+        return true;
+    }
+
+    if (ffStrEqualsIgnCase(subKey, "show-readonly"))
+    {
+        if (ffOptionParseBoolean(value))
+            options->showTypes |= FF_DISK_VOLUME_TYPE_READONLY_BIT;
+        else
+            options->showTypes &= ~FF_DISK_VOLUME_TYPE_READONLY_BIT;
         return true;
     }
 
     if (ffStrEqualsIgnCase(subKey, "show-unknown"))
     {
         if (ffOptionParseBoolean(value))
-            options->showTypes |= FF_DISK_TYPE_UNKNOWN_BIT;
+            options->showTypes |= FF_DISK_VOLUME_TYPE_UNKNOWN_BIT;
         else
-            options->showTypes &= ~FF_DISK_TYPE_UNKNOWN_BIT;
+            options->showTypes &= ~FF_DISK_VOLUME_TYPE_UNKNOWN_BIT;
+        return true;
+    }
+
+    if (ffStrEqualsIgnCase(subKey, "use-available"))
+    {
+        if (ffOptionParseBoolean(value))
+            options->calcType = FF_DISK_CALC_TYPE_AVAILABLE;
+        else
+            options->calcType = FF_DISK_CALC_TYPE_FREE;
         return true;
     }
 
@@ -281,36 +316,54 @@ void ffParseDiskJsonObject(FFDiskOptions* options, yyjson_val* module)
         if (ffStrEqualsIgnCase(key, "showExternal"))
         {
             if (yyjson_get_bool(val))
-                options->showTypes |= FF_DISK_TYPE_EXTERNAL_BIT;
+                options->showTypes |= FF_DISK_VOLUME_TYPE_EXTERNAL_BIT;
             else
-                options->showTypes &= ~FF_DISK_TYPE_EXTERNAL_BIT;
+                options->showTypes &= ~FF_DISK_VOLUME_TYPE_EXTERNAL_BIT;
             continue;
         }
 
         if (ffStrEqualsIgnCase(key, "showHidden"))
         {
             if (yyjson_get_bool(val))
-                options->showTypes |= FF_DISK_TYPE_HIDDEN_BIT;
+                options->showTypes |= FF_DISK_VOLUME_TYPE_HIDDEN_BIT;
             else
-                options->showTypes &= ~FF_DISK_TYPE_HIDDEN_BIT;
+                options->showTypes &= ~FF_DISK_VOLUME_TYPE_HIDDEN_BIT;
             continue;
         }
 
         if (ffStrEqualsIgnCase(key, "showSubvolumes"))
         {
             if (yyjson_get_bool(val))
-                options->showTypes |= FF_DISK_TYPE_SUBVOLUME_BIT;
+                options->showTypes |= FF_DISK_VOLUME_TYPE_SUBVOLUME_BIT;
             else
-                options->showTypes &= ~FF_DISK_TYPE_SUBVOLUME_BIT;
+                options->showTypes &= ~FF_DISK_VOLUME_TYPE_SUBVOLUME_BIT;
+            continue;
+        }
+
+        if (ffStrEqualsIgnCase(key, "showReadOnly"))
+        {
+            if (yyjson_get_bool(val))
+                options->showTypes |= FF_DISK_VOLUME_TYPE_READONLY_BIT;
+            else
+                options->showTypes &= ~FF_DISK_VOLUME_TYPE_READONLY_BIT;
             continue;
         }
 
         if (ffStrEqualsIgnCase(key, "showUnknown"))
         {
             if (yyjson_get_bool(val))
-                options->showTypes |= FF_DISK_TYPE_UNKNOWN_BIT;
+                options->showTypes |= FF_DISK_VOLUME_TYPE_UNKNOWN_BIT;
             else
-                options->showTypes &= ~FF_DISK_TYPE_UNKNOWN_BIT;
+                options->showTypes &= ~FF_DISK_VOLUME_TYPE_UNKNOWN_BIT;
+            continue;
+        }
+
+        if (ffStrEqualsIgnCase(key, "useAvailable"))
+        {
+            if (yyjson_get_bool(val))
+                options->calcType = FF_DISK_CALC_TYPE_AVAILABLE;
+            else
+                options->calcType = FF_DISK_CALC_TYPE_FREE;
             continue;
         }
 
