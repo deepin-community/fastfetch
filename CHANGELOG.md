@@ -1,3 +1,26 @@
+# 2.1.1
+
+Features:
+* Support opkg (Packages, Linux)
+* Support GNOME Console terminal version and font detection (Terminal, Linux)
+* Add `--cpu-freq-ndigits` to set number of digits for CPU frequency (CPU)
+* New module to detect physical disk I/O usage (DiskIO)
+* Add `--cpuusage-separate` to display CPU usage per CPU logical core
+* Add `--brightness-ddcci-sleep` to set the sleep times (in ms) when sending DDC/CI requests (Brightness, #580)
+
+Bugfixes:
+* Fix possible crashes on Windows 7 (Disk, Windows)
+* Fix possible crashes caused by uninitialized strings (Users, Windows)
+* Improve support of `--help *-format` and several bugs are found and fixed
+* Don't incorrectly print `No active sound devices found` when using a non-controllable sound device (Sound, macOS)
+* Fix implementation processes counting (Processes, Linux)
+* Work around a issue that SSID cannot be detected on macOS Sonoma (Wifi, macOS)
+
+Logo:
+* Add Chimera Linux
+* Add EndeavourSmall
+* Add Xenia
+
 # 2.1.0
 
 This release introduces a new output format: JSON result
@@ -11,35 +34,35 @@ Changes:
 * `/boot` is hidden by default (FreeBSD, Disk)
 
 Features:
-  * Add `--format json`, which prints system information as JSON format
-  * Add fast path for xfce4 version detection (DE, FreeBSD)
-  * Support contour terminal version and font detection (Terminal / TerminalFont)
-  * Support `kitty-direct` / `iterm` without specifying logo width / height. Note: in this case, the entre screen will be cleared.
-  * Support new flag `--logo-separate`. If true, print modules at bottom of the logo
-  * Support Apple Silicon CPU frequency detection (CPU, macOS)
-  * Support user login time detection (Users)
-  * Support winget package manager detection, guarded behind `--allow-slow-operations` (Packages, Windows)
-  * Print monitor type (built-in or external) (Display)
-  * Support full GPU detection in WSL (Linux, GPU)
-  * Add `--module-key " "` as a special case for hiding keys
-  * Support `--title-format`. See `fastfetch --help title-format` for detail
-  * Support `--colors-key` (Colors)
-  * Add `-c` as a shortcut of `--load-config`. Note it was used as the shortcut of `--color` before 2.0.5
-  * Support Windows Service Pack version detection (Kernel, Windows)
-  * Support Debian point releases detection (OS, Linux)
-  * Add new module `NetIO` which prints network throughput (usage) of specified interface. Note this module costs about 1 second to finish.
-  * Use `lscpu` to detect CPU name for ARM CPUs (CPU, Linux)
+* Add `--format json`, which prints system information as JSON format
+* Add fast path for xfce4 version detection (DE, FreeBSD)
+* Support contour terminal version and font detection (Terminal / TerminalFont)
+* Support `kitty-direct` / `iterm` without specifying logo width / height. Note: in this case, the entre screen will be cleared.
+* Support new flag `--logo-separate`. If true, print modules at bottom of the logo
+* Support Apple Silicon CPU frequency detection (CPU, macOS)
+* Support user login time detection (Users)
+* Support winget package manager detection, guarded behind `--allow-slow-operations` (Packages, Windows)
+* Print monitor type (built-in or external) (Display)
+* Support full GPU detection in WSL (Linux, GPU)
+* Add `--module-key " "` as a special case for hiding keys
+* Support `--title-format`. See `fastfetch --help title-format` for detail
+* Support `--colors-key` (Colors)
+* Add `-c` as a shortcut of `--load-config`. Note it was used as the shortcut of `--color` before 2.0.5
+* Support Windows Service Pack version detection (Kernel, Windows)
+* Support Debian point releases detection (OS, Linux)
+* Add new module `NetIO` which prints network throughput (usage) of specified interface. Note this module costs about 1 second to finish.
+* Use `lscpu` to detect CPU name for ARM CPUs (CPU, Linux)
 
 Bugfixes:
-  * Fix fastfetch hanging in specific environment (#561)
-  * Fix short read when reading from stdin (Logo)
-  * Fix `poll() timeout or failed` error when image is very large (Logo)
-  * Fix Termux Monet terminal version detection (Terminal)
-  * Fix zpool volumes detection (Disk, Linux)
-  * Fix external volumes detection (Disk, Linux)
-  * Fix snap package number detection on systems other than Ubuntu (Packages, Linux)
-  * Fix dpkg / apt package number detection (Packages, Linux)
-  * Fix bluetooth mac address detection (Bluetooth, Windows)
+* Fix fastfetch hanging in specific environment (#561)
+* Fix short read when reading from stdin (Logo)
+* Fix `poll() timeout or failed` error when image is very large (Logo)
+* Fix Termux Monet terminal version detection (Terminal)
+* Fix zpool volumes detection (Disk, Linux)
+* Fix external volumes detection (Disk, Linux)
+* Fix snap package number detection on systems other than Ubuntu (Packages, Linux)
+* Fix dpkg / apt package number detection (Packages, Linux)
+* Fix bluetooth mac address detection (Bluetooth, Windows)
 
 Logo:
 * Add Afterglow

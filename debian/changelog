@@ -1,3 +1,18 @@
+fastfetch (2.1.1-deepin) stable; urgency=medium
+
+  * New upstream version
+  * Support opkg (Packages, Linux)
+  * Support GNOME Console terminal version and font detection (Terminal, Linux)
+  * Add --cpu-freq-ndigits to set number of digits for CPU frequency (CPU)
+  * New module to detect physical disk I/O usage (DiskIO)
+  * Add --cpuusage-separate to display CPU usage per CPU logical core
+  * Add --brightness-ddcci-sleep to set the sleep times (in ms) when sending DDC/CI requests (Brightness, #580)
+  * Add Chimera Linux
+  * Add EndeavourSmall
+  * Add Xenia
+
+ -- zhangkun <zhangkun2@uniontech.com>  Sun, 15 Oct 2023 21:36:21 +0800
+
 fastfetch (2.1.0-deepin) stable; urgency=medium
 
   * New upstream version
