@@ -1,3 +1,12 @@
+fastfetch (2.1.2-deepin) stable; urgency=medium
+
+  * New upstream version
+  * Fix icon detection on Windows. It shows enabled system icons in desktop (`This PC`, `Recycle Bin`, etc) (Icon, Windows)
+  * Fix compatibility with ddcutil 2.0 (Brightness, Linux)
+  * Fix a compile warning (CPUUsage, FreeBSD)
+
+ -- zhangkun <zhangkun2@uniontech.com>  Sun, 22 Oct 2023 18:50:24 +0800
+
 fastfetch (2.1.1-deepin) stable; urgency=medium
 
   * New upstream version
