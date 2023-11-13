@@ -1,3 +1,13 @@
+fastfetch (2.2.3-deepin) stable; urgency=medium
+
+  * New upstream version
+  * Update the latest mac models (Host, macOS)
+  * Fix local ips detection on Android. Regression from v2.2.0 (LocalIP, Android)
+  * Fix terminal detection on NixOS (Terminal)
+  * Fixed some bugs and added some new features
+
+ -- zhangkun <zhangkun2@uniontech.com>  Mon, 13 Nov 2023 19:05:14 +0800
+
 fastfetch (2.1.2-deepin) stable; urgency=medium
 
   * New upstream version

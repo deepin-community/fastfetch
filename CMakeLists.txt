@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.12.0) # target_link_libraries with OBJECT libs & project homepage url
 
 project(fastfetch
-    VERSION 2.1.2
+    VERSION 2.2.3
     LANGUAGES C
-    DESCRIPTION "Fast system information tool"
+    DESCRIPTION "Fast neofetch-like system information tool"
     HOMEPAGE_URL "https://github.com/fastfetch-cli/fastfetch"
 )
 
@@ -70,8 +70,9 @@ cmake_dependent_option(ENABLE_DDCUTIL "Enable ddcutil" ON "LINUX" OFF)
 cmake_dependent_option(ENABLE_DIRECTX_HEADERS "Enable DirectX headers for WSL" ON "LINUX" OFF)
 cmake_dependent_option(ENABLE_THREADS "Enable multithreading" ON "Threads_FOUND" OFF)
 cmake_dependent_option(ENABLE_PCI_MEMORY "Enable detecting GPU memory size with libpci" OFF "LINUX OR BSD" OFF)
-cmake_dependent_option(ENABLE_SYSTEM_YYJSON "Use system provided (instead of fastfetch embeded) yyjson library" OFF "LINUX OR APPLE OR BSD OR WIN32 OR ANDROID" OFF)
 
+option(ENABLE_SYSTEM_YYJSON "Use system provided (instead of fastfetch embeded) yyjson library" OFF)
+option(ENABLE_ASAN "Build fastfetch with ASAN (address sanitizer)" OFF)
 option(BUILD_TESTS "Build tests" OFF) # Also create test executables
 option(SET_TWEAK "Add tweak to project version" ON) # This is set to off by github actions for release builds
 
@@ -97,7 +98,7 @@ endif()
 set(WARNING_FLAGS "-Wall -Wextra -Wconversion -Werror=uninitialized -Werror=return-type")
 
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${WARNING_FLAGS} -Werror=incompatible-pointer-types -Werror=implicit-function-declaration")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${WARNING_FLAGS} -Werror=incompatible-pointer-types -Werror=implicit-function-declaration -Werror=int-conversion")
 
 if(WIN32 OR ENABLE_DIRECTX_HEADERS)
     enable_language(CXX)
@@ -116,7 +117,8 @@ if(APPLE AND DEFINED ENV{HOMEBREW_PREFIX})
 endif()
 
 set(FASTFETCH_FLAGS_DEBUG "-fno-omit-frame-pointer")
-if(NOT WIN32 AND NOT APPLE)
+if(ENABLE_ASAN)
+    message(STATUS "Address sanitizer enabled (DEBUG only)")
     set(FASTFETCH_FLAGS_DEBUG "${FASTFETCH_FLAGS_DEBUG} -fsanitize=address")
 endif()
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${FASTFETCH_FLAGS_DEBUG}")
@@ -232,14 +234,11 @@ endif()
 
 function(fastfetch_load_raw_text FILENAME OUTVAR)
     file(READ "${FILENAME}" TEMP)
-    string(REGEX REPLACE "\n$" "" TEMP "${TEMP}")                                  # Remove trailing newline
-    string(JSON TEMP SET "{}" "${TEMP}" "0")                                       # Encode raw strings using JSON_SET
-    string(REGEX REPLACE "^\\{[ \t\r\n]*" "" TEMP "${TEMP}")                       # Remove JSON braces
-    string(REGEX REPLACE "[ \t\r\n]*:[ \t\r\n]*0[ \t\r\n]*\\}$" "" TEMP "${TEMP}") # Remove trailing ` : 0 }`
-    if(NOT "${TEMP}" MATCHES "^\"[^\n]*\"")
-        message(FATAL_ERROR "Internal error: unexpected output: '${TEMP}'")
-    endif()
-    set(${OUTVAR} "${TEMP}" PARENT_SCOPE)
+    string(REGEX REPLACE "\n$" "" TEMP "${TEMP}") # Remove trailing newline
+    string(REPLACE "\\" "\\\\" TEMP "${TEMP}")    # Escape backslashes
+    string(REPLACE "\n" "\\n" TEMP "${TEMP}")     # Replace newlines with \n
+    string(REPLACE "\"" "\\\"" TEMP "${TEMP}")    # Replace quotes with \"
+    set(${OUTVAR} "\"${TEMP}\"" PARENT_SCOPE)
 endfunction(fastfetch_load_raw_text)
 
 file(GLOB LOGO_FILES "src/logo/ascii/*.txt")
@@ -297,7 +296,6 @@ set(LIBFASTFETCH_SRC
     src/logo/image/im7.c
     src/logo/image/image.c
     src/logo/logo.c
-    src/logo/option.c
     src/modules/battery/battery.c
     src/modules/bios/bios.c
     src/modules/bluetooth/bluetooth.c
@@ -355,6 +353,11 @@ set(LIBFASTFETCH_SRC
     src/modules/wifi/wifi.c
     src/modules/wm/wm.c
     src/modules/wmtheme/wmtheme.c
+    src/options/display.c
+    src/options/modules.c
+    src/options/logo.c
+    src/options/general.c
+    src/options/library.c
     src/util/edidHelper.c
     src/util/FFlist.c
     src/util/FFstrbuf.c
@@ -388,6 +391,7 @@ if(LINUX)
         src/detection/displayserver/linux/xlib.c
         src/detection/font/font_linux.c
         src/detection/gpu/gpu_linux.c
+        src/detection/gpu/gpu_nvidia.c
         src/detection/gtk_qt/gtk.c
         src/detection/host/host_linux.c
         src/detection/icons/icons_linux.c
@@ -416,6 +420,8 @@ if(LINUX)
         src/detection/users/users_linux.c
         src/detection/wallpaper/wallpaper_linux.c
         src/detection/wifi/wifi_linux.c
+        src/detection/wm/wm_nosupport.c
+        src/detection/de/de_linux.c
         src/detection/wmtheme/wmtheme_linux.c
         src/util/platform/FFPlatform_unix.c
     )
@@ -465,6 +471,8 @@ elseif(ANDROID)
         src/detection/users/users_linux.c
         src/detection/wallpaper/wallpaper_nosupport.c
         src/detection/wifi/wifi_android.c
+        src/detection/wm/wm_nosupport.c
+        src/detection/de/de_nosupport.c
         src/detection/wmtheme/wmtheme_nosupport.c
         src/util/platform/FFPlatform_unix.c
     )
@@ -494,6 +502,7 @@ elseif(BSD)
         src/detection/displayserver/linux/xlib.c
         src/detection/font/font_linux.c
         src/detection/gpu/gpu_linux.c
+        src/detection/gpu/gpu_nvidia.c
         src/detection/gtk_qt/gtk.c
         src/detection/host/host_bsd.c
         src/detection/lm/lm_linux.c
@@ -522,6 +531,8 @@ elseif(BSD)
         src/detection/users/users_linux.c
         src/detection/wallpaper/wallpaper_linux.c
         src/detection/wifi/wifi_bsd.c
+        src/detection/wm/wm_nosupport.c
+        src/detection/de/de_linux.c
         src/detection/wmtheme/wmtheme_linux.c
         src/util/platform/FFPlatform_unix.c
     )
@@ -572,6 +583,8 @@ elseif(APPLE)
         src/detection/users/users_linux.c
         src/detection/wallpaper/wallpaper_apple.c
         src/detection/wifi/wifi_apple.m
+        src/detection/wm/wm_apple.c
+        src/detection/de/de_nosupport.c
         src/detection/wmtheme/wmtheme_apple.m
         src/util/apple/cf_helpers.c
         src/util/apple/osascript.m
@@ -597,6 +610,7 @@ elseif(WIN32)
         src/detection/displayserver/displayserver_windows.c
         src/detection/font/font_windows.c
         src/detection/gpu/gpu_windows.c
+        src/detection/gpu/gpu_nvidia.c
         src/detection/host/host_windows.c
         src/detection/icons/icons_windows.c
         src/detection/libc/libc_windows.cpp
@@ -623,6 +637,8 @@ elseif(WIN32)
         src/detection/users/users_windows.c
         src/detection/wallpaper/wallpaper_windows.c
         src/detection/wifi/wifi_windows.c
+        src/detection/wm/wm_windows.cpp
+        src/detection/de/de_nosupport.c
         src/detection/wmtheme/wmtheme_windows.c
         src/util/windows/getline.c
         src/util/windows/com.cpp
@@ -868,8 +884,11 @@ elseif(APPLE)
         PRIVATE "-framework OpenCL"
         PRIVATE "-framework SystemConfiguration"
         PRIVATE "-weak_framework CoreDisplay"
-        PRIVATE "-weak_framework DisplayServices -F /System/Library/PrivateFrameworks"
-        PRIVATE "-weak_framework MediaRemote -F /System/Library/PrivateFrameworks"
+
+        PRIVATE "-F /System/Library/PrivateFrameworks"
+        PRIVATE "-weak_framework DisplayServices"
+        PRIVATE "-weak_framework MediaRemote"
+        PRIVATE "-weak_framework Apple80211"
     )
 elseif(WIN32)
     target_compile_definitions(libfastfetch PRIVATE -D_WIN32_WINNT=0x0601)

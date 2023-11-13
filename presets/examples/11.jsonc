@@ -4,7 +4,6 @@
         "type": "small"
     },
     "display": {
-        "percentType": 9,
         "separator": "\u001b[31m->   "
     },
     "modules": [

@@ -22,23 +22,27 @@ void ffPrintCPUUsage(FFCPUUsageOptions* options)
     double maxValue = -999, minValue = 999, sumValue = 0;
     uint32_t maxIndex = 999, minIndex = 999;
 
-    uint32_t index = 0;
+    uint32_t index = 0, valueCount = 0;
     FF_LIST_FOR_EACH(double, percent, percentages)
     {
-        sumValue += *percent;
-        if (*percent > maxValue)
+        if (*percent == *percent)
         {
-            maxValue = *percent;
-            maxIndex = index;
-        }
-        if (*percent < minValue)
-        {
-            minValue = *percent;
-            minIndex = index;
+            sumValue += *percent;
+            if (*percent > maxValue)
+            {
+                maxValue = *percent;
+                maxIndex = index;
+            }
+            if (*percent < minValue)
+            {
+                minValue = *percent;
+                minIndex = index;
+            }
+            ++valueCount;
         }
         ++index;
     }
-    double avgValue = sumValue / (double) percentages.length;
+    double avgValue = sumValue / (double) valueCount;
 
     if(options->moduleArgs.outputFormat.length == 0)
     {
@@ -47,9 +51,9 @@ void ffPrintCPUUsage(FFCPUUsageOptions* options)
         FF_STRBUF_AUTO_DESTROY str = ffStrbufCreate();
         if (!options->separate)
         {
-            if(instance.config.percentType & FF_PERCENTAGE_TYPE_BAR_BIT)
+            if(instance.config.display.percentType & FF_PERCENTAGE_TYPE_BAR_BIT)
                 ffAppendPercentBar(&str, avgValue, 0, 50, 80);
-            if(instance.config.percentType & FF_PERCENTAGE_TYPE_NUM_BIT)
+            if(instance.config.display.percentType & FF_PERCENTAGE_TYPE_NUM_BIT)
             {
                 if(str.length > 0)
                     ffStrbufAppendC(&str, ' ');
@@ -85,12 +89,6 @@ void ffPrintCPUUsage(FFCPUUsageOptions* options)
     }
 }
 
-void ffInitCPUUsageOptions(FFCPUUsageOptions* options)
-{
-    ffOptionInitModuleBaseInfo(&options->moduleInfo, FF_CPUUSAGE_MODULE_NAME, ffParseCPUUsageCommandOptions, ffParseCPUUsageJsonObject, ffPrintCPUUsage, ffGenerateCPUUsageJson, ffPrintCPUUsageHelpFormat);
-    ffOptionInitModuleArg(&options->moduleArgs);
-}
-
 bool ffParseCPUUsageCommandOptions(FFCPUUsageOptions* options, const char* key, const char* value)
 {
     const char* subKey = ffOptionTestPrefix(key, FF_CPUUSAGE_MODULE_NAME);
@@ -105,11 +103,6 @@ bool ffParseCPUUsageCommandOptions(FFCPUUsageOptions* options, const char* key, 
     }
 
     return false;
-}
-
-void ffDestroyCPUUsageOptions(FFCPUUsageOptions* options)
-{
-    ffOptionDestroyModuleArg(&options->moduleArgs);
 }
 
 void ffParseCPUUsageJsonObject(FFCPUUsageOptions* options, yyjson_val* module)
@@ -135,7 +128,18 @@ void ffParseCPUUsageJsonObject(FFCPUUsageOptions* options, yyjson_val* module)
     }
 }
 
-void ffGenerateCPUUsageJson(FF_MAYBE_UNUSED FFCPUUsageOptions* options, yyjson_mut_doc* doc, yyjson_mut_val* module)
+void ffGenerateCPUUsageJsonConfig(FFCPUUsageOptions* options, yyjson_mut_doc* doc, yyjson_mut_val* module)
+{
+    __attribute__((__cleanup__(ffDestroyCPUUsageOptions))) FFCPUUsageOptions defaultOptions;
+    ffInitCPUUsageOptions(&defaultOptions);
+
+    ffJsonConfigGenerateModuleArgsConfig(doc, module, &defaultOptions.moduleArgs, &options->moduleArgs);
+
+    if (options->separate != defaultOptions.separate)
+        yyjson_mut_obj_add_bool(doc, module, "separate", options->separate);
+}
+
+void ffGenerateCPUUsageJsonResult(FF_MAYBE_UNUSED FFCPUUsageOptions* options, yyjson_mut_doc* doc, yyjson_mut_val* module)
 {
     FF_LIST_AUTO_DESTROY percentages = ffListCreate(sizeof(double));
     const char* error = ffGetCpuUsageResult(&percentages);
@@ -161,4 +165,25 @@ void ffPrintCPUUsageHelpFormat(void)
         "CPU usage (percentage, minimum)",
         "CPU core index of minimum usage",
     });
+}
+
+void ffInitCPUUsageOptions(FFCPUUsageOptions* options)
+{
+    ffOptionInitModuleBaseInfo(
+        &options->moduleInfo,
+        FF_CPUUSAGE_MODULE_NAME,
+        ffParseCPUUsageCommandOptions,
+        ffParseCPUUsageJsonObject,
+        ffPrintCPUUsage,
+        ffGenerateCPUUsageJsonResult,
+        ffPrintCPUUsageHelpFormat,
+        ffGenerateCPUUsageJsonConfig
+    );
+    ffOptionInitModuleArg(&options->moduleArgs);
+    options->separate = false;
+}
+
+void ffDestroyCPUUsageOptions(FFCPUUsageOptions* options)
+{
+    ffOptionDestroyModuleArg(&options->moduleArgs);
 }

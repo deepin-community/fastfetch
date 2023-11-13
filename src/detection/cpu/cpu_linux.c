@@ -47,7 +47,8 @@ static const char* parseCpuInfo(FFCPUResult* cpu, FFstrbuf* physicalCoresBuffer,
             ffParsePropLine(line, "isa :", cpuIsa) ||
             ffParsePropLine(line, "uarch :", cpuUarch) ||
             (cpu->name.length == 0 && ffParsePropLine(line, "Hardware :", &cpu->name)) || //For Android devices
-            (cpu->name.length == 0 && ffParsePropLine(line, "cpu     :", &cpu->name)) //For POWER
+            (cpu->name.length == 0 && ffParsePropLine(line, "cpu     :", &cpu->name)) || //For POWER
+            (cpu->name.length == 0 && ffParsePropLine(line, "cpu model               :", &cpu->name)) //For MIPS
         );
     }
 
@@ -82,12 +83,10 @@ static double getFrequency(const char* info, const char* scaling)
 
 static double detectCPUTemp(void)
 {
-    const FFTempsResult* temps = ffDetectTemps();
+    const FFlist* tempsResult = ffDetectTemps();
 
-    for(uint32_t i = 0; i < temps->values.length; i++)
+    FF_LIST_FOR_EACH(FFTempValue, value, *tempsResult)
     {
-        FFTempValue* value = ffListGet(&temps->values, i);
-
         if(
             ffStrbufFirstIndexS(&value->name, "cpu") < value->name.length ||
             ffStrbufCompS(&value->name, "k10temp") == 0 ||
@@ -114,6 +113,10 @@ static void parseIsa(FFstrbuf* cpuIsa)
             cpuIsa->chars[4] = 'g';
         }
         // The final ISA output of the above example is "rv64gch".
+    }
+    if(ffStrbufStartsWithS(cpuIsa, "mips"))
+    {
+        ffStrbufSubstrAfterLastC(cpuIsa, ' ');
     }
 }
 

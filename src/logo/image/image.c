@@ -11,33 +11,51 @@
     #include <windows.h>
 #endif
 
+// https://github.com/kostya/benchmarks/blob/master/base64/test-nolib.c#L145
+static void base64EncodeRaw(uint32_t size, const char *str, uint32_t *out_size, char *output)
+{
+    static const char chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    char *out = output;
+    const char *ends = str + (size - size % 3);
+    while (str != ends) {
+        uint32_t n = __builtin_bswap32(*(uint32_t*) str);
+        *out++ = chars[(n >> 26) & 63];
+        *out++ = chars[(n >> 20) & 63];
+        *out++ = chars[(n >> 14) & 63];
+        *out++ = chars[(n >> 8) & 63];
+        str += 3;
+    }
+
+    if (size % 3 == 1) {
+        uint64_t n = (uint64_t)*str << 16;
+        *out++ = chars[(n >> 18) & 63];
+        *out++ = chars[(n >> 12) & 63];
+        *out++ = '=';
+        *out++ = '=';
+    } else if (size % 3 == 2) {
+        uint64_t n = (uint64_t)*str++ << 16;
+        n |= (uint64_t)*str << 8;
+        *out++ = chars[(n >> 18) & 63];
+        *out++ = chars[(n >> 12) & 63];
+        *out++ = chars[(n >> 6) & 63];
+        *out++ = '=';
+    }
+    *out = '\0';
+    *out_size = (uint32_t) (out - output);
+}
+
 static FFstrbuf base64Encode(const FFstrbuf* in)
 {
-    const char* base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    FFstrbuf out = ffStrbufCreateA(10 + in->length * 4 / 3);
+    base64EncodeRaw(in->length, in->chars, &out.length, out.chars);
+    assert(out.length < out.allocated);
 
-    FFstrbuf out = ffStrbufCreateA(8 * (1 + in->length / 6));
-
-    unsigned val = 0;
-    int valb = -6;
-    for (uint32_t i = 0; i < in->length; ++i)
-    {
-        unsigned char c = (unsigned char) in->chars[i];
-        val = (val << 8) + c;
-        valb += 8;
-        while (valb >= 0)
-        {
-            ffStrbufAppendC(&out, base64Chars[(val>>valb)&0x3F]);
-            valb -= 6;
-        }
-    }
-    if (valb > -6) ffStrbufAppendC(&out, base64Chars[((val<<8)>>(valb+8))&0x3F]);
-    while (out.length % 4) ffStrbufAppendC(&out, '=');
     return out;
 }
 
 static bool printImageIterm(void)
 {
-    const FFLogoOptions* options = &instance.config.logo;
+    const FFOptionsLogo* options = &instance.config.logo;
     FF_STRBUF_AUTO_DESTROY buf = ffStrbufCreate();
     if(!ffAppendFileBuffer(options->source.chars, &buf))
     {
@@ -95,7 +113,7 @@ static bool printImageIterm(void)
         ffStrbufAppendF(&buf, "\e]1337;File=inline=1;width=%u;height=%u;preserveAspectRatio=%u:%s\a\n",
             (unsigned) options->width,
             (unsigned) options->height,
-            (unsigned) options->preserveAspectRadio,
+            (unsigned) options->preserveAspectRatio,
             base64.chars
         );
 
@@ -118,7 +136,7 @@ static bool printImageIterm(void)
 
 static bool printImageKittyDirect(void)
 {
-    const FFLogoOptions* options = &instance.config.logo;
+    const FFOptionsLogo* options = &instance.config.logo;
     FF_STRBUF_AUTO_DESTROY base64 = base64Encode(&options->source);
 
     if (!options->width || !options->height)
@@ -222,7 +240,7 @@ static inline char* realpath(const char* restrict file_name, char* restrict reso
 
 static bool compressBlob(void** blob, size_t* length)
 {
-    FF_LIBRARY_LOAD(zlib, &instance.config.libZ, false, "libz" FF_LIBRARY_EXTENSION, 2)
+    FF_LIBRARY_LOAD(zlib, &instance.config.library.libZ, false, "libz" FF_LIBRARY_EXTENSION, 2)
     FF_LIBRARY_LOAD_SYMBOL(zlib, compressBound, false)
     FF_LIBRARY_LOAD_SYMBOL(zlib, compress2, false)
 
@@ -296,7 +314,7 @@ static void writeCacheUint32(FFLogoRequestData* requestData, uint32_t value, con
 
 static void printImagePixels(FFLogoRequestData* requestData, const FFstrbuf* result, const char* cacheFileName)
 {
-    const FFLogoOptions* options = &instance.config.logo;
+    const FFOptionsLogo* options = &instance.config.logo;
     //Calculate character dimensions
     instance.state.logoWidth = requestData->logoCharacterWidth + options->paddingLeft + options->paddingRight;
     instance.state.logoHeight = requestData->logoCharacterHeight + options->paddingTop - 1;
@@ -398,7 +416,7 @@ static bool printImageKitty(FFLogoRequestData* requestData, const ImageData* ima
 #include <chafa.h>
 static bool printImageChafa(FFLogoRequestData* requestData, const ImageData* imageData)
 {
-    FF_LIBRARY_LOAD(chafa, &instance.config.libChafa, false,
+    FF_LIBRARY_LOAD(chafa, &instance.config.library.libChafa, false,
         "libchafa" FF_LIBRARY_EXTENSION, 1,
         "libchafa-0" FF_LIBRARY_EXTENSION, -1 // Required for Windows
     )
