@@ -1,3 +1,15 @@
+fastfetch (2.4.0-0deepin) unstable; urgency=medium
+
+  * New upstream version
+  * Improve performance of detecting rpm and pkg package count (Packages, Linux / FreeBSD)
+  * Support Apple M3X temperature detection (CPU / GPU, macOS)
+  * `--ds-force-drm` support a new option `sysfs-only`
+  * Improve xfce4 version detection
+  * Detect WM and DE by enumerating running processes (WM / DE, FreeBSD)
+  * Add a new module `Physical Disk`, which detects product name, full size, serial number and so on.
+
+ -- zhangkun <zhangkun2@uniontech.com>  Sun, 24 Dec 2023 16:45:31 +0800
+
 fastfetch (2.2.3-deepin) stable; urgency=medium
 
   * New upstream version
