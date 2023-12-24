@@ -94,7 +94,10 @@ void ffStart(void)
     ffHideCursor = instance.config.display.hideCursor && !instance.config.display.pipe && !instance.state.resultDoc;
 
     #ifdef _WIN32
-    setvbuf(stdout, NULL, _IOFBF, instance.config.display.noBuffer ? 0 : 4096);
+    if (instance.config.display.noBuffer)
+        setvbuf(stdout, NULL, _IONBF, 0);
+    else
+        setvbuf(stdout, NULL, _IOFBF, 4096);
     SetConsoleCtrlHandler(consoleHandler, TRUE);
     HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
     DWORD mode = 0;
@@ -144,7 +147,7 @@ static void destroyState(void)
     ffPlatformDestroy(&instance.state.platform);
     yyjson_doc_free(instance.state.configDoc);
     yyjson_mut_doc_free(instance.state.resultDoc);
-    ffStrbufDestroy(&instance.state.migrateConfigPath);
+    ffStrbufDestroy(&instance.state.genConfigPath);
 }
 
 void ffDestroyInstance(void)
@@ -180,6 +183,9 @@ void ffListFeatures(void)
         #endif
         #ifdef FF_HAVE_X11
             "x11\n"
+        #endif
+        #ifdef FF_HAVE_DRM
+            "drm\n"
         #endif
         #ifdef FF_HAVE_GIO
             "gio\n"

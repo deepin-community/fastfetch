@@ -11,7 +11,7 @@
 
 static uint32_t getNumElementsImpl(const char* dirname, unsigned char type)
 {
-    DIR* dirp = opendir(dirname);
+    FF_AUTO_CLOSE_DIR DIR* dirp = opendir(dirname);
     if(dirp == NULL)
         return 0;
 
@@ -25,8 +25,6 @@ static uint32_t getNumElementsImpl(const char* dirname, unsigned char type)
 
     if(type == DT_DIR && num_elements >= 2)
         num_elements -= 2; // accounting for . and ..
-
-    closedir(dirp);
 
     return num_elements;
 }
@@ -42,25 +40,18 @@ static uint32_t getNumElements(FFstrbuf* baseDir, const char* dirname, unsigned 
 
 static uint32_t getNumStringsImpl(const char* filename, const char* needle)
 {
-    FILE* file = fopen(filename, "r");
-    if(file == NULL)
+    FF_STRBUF_AUTO_DESTROY content = ffStrbufCreate();
+    if (!ffReadFileBuffer(filename, &content))
         return 0;
 
     uint32_t count = 0;
-
-    char* line = NULL;
-    size_t len = 0;
-
-    while(getline(&line, &len, file) != EOF)
+    char *iter = content.chars;
+    size_t needleLength = strlen(needle);
+    while ((iter = memmem(iter, content.length - (size_t)(iter - content.chars), needle, needleLength)) != NULL)
     {
-        if(strstr(line, needle) != NULL)
-            ++count;
+        ++count;
+        iter += needleLength;
     }
-
-    if(line != NULL)
-        free(line);
-
-    fclose(file);
 
     return count;
 }
@@ -272,9 +263,8 @@ static void getPackageCounts(FFstrbuf* baseDir, FFPackagesResult* packageCounts)
     packageCounts->nixDefault += getNixPackages(baseDir, "/nix/var/nix/profiles/default");
     packageCounts->nixSystem += getNixPackages(baseDir, "/run/current-system");
     packageCounts->pacman += getNumElements(baseDir, "/var/lib/pacman/local", DT_DIR);
-    packageCounts->pkg += getSQLite3Int(baseDir, "/var/db/pkg/local.sqlite", "SELECT count(id) FROM packages");
     packageCounts->pkgtool += getNumElements(baseDir, "/var/log/packages", DT_REG);
-    packageCounts->rpm += getSQLite3Int(baseDir, "/var/lib/rpm/rpmdb.sqlite", "SELECT count(blob) FROM Packages");
+    packageCounts->rpm += getSQLite3Int(baseDir, "/var/lib/rpm/rpmdb.sqlite", "SELECT count(*) FROM Packages");
     packageCounts->snap += getSnap(baseDir);
     packageCounts->xbps += getXBPS(baseDir, "/var/db/xbps");
     packageCounts->brewCask += getNumElements(baseDir, "/home/linuxbrew/.linuxbrew/Caskroom", DT_DIR);
@@ -288,7 +278,7 @@ static void getPackageCountsRegular(FFstrbuf* baseDir, FFPackagesResult* package
     getPackageCounts(baseDir, packageCounts);
 
     uint32_t baseDirLength = baseDir->length;
-    ffStrbufAppendS(baseDir, FASTFETCH_TARGET_DIR_ETC"/pacman-mirrors.conf");
+    ffStrbufAppendS(baseDir, FASTFETCH_TARGET_DIR_ETC "/pacman-mirrors.conf");
     if(ffParsePropFile(baseDir->chars, "Branch =", &packageCounts->pacmanBranch) && packageCounts->pacmanBranch.length == 0)
         ffStrbufAppendS(&packageCounts->pacmanBranch, "stable");
     ffStrbufSubstrBefore(baseDir, baseDirLength);

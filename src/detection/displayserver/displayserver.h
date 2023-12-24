@@ -1,8 +1,5 @@
 #pragma once
 
-#ifndef FF_INCLUDED_detection_displayserver
-#define FF_INCLUDED_detection_displayserver
-
 #include "fastfetch.h"
 
 #define FF_DE_PRETTY_PLASMA "KDE Plasma"
@@ -14,6 +11,7 @@
 #define FF_DE_PRETTY_LXDE "LXDE"
 #define FF_DE_PRETTY_LXQT "LXQT"
 #define FF_DE_PRETTY_BUDGIE "Budgie"
+#define FF_DE_PRETTY_CDE "CDE"
 #define FF_DE_PRETTY_UNITY "Unity"
 
 #define FF_WM_PRETTY_KWIN "KWin"
@@ -35,6 +33,7 @@
 #define FF_WM_PRETTY_HERBSTLUFTWM "herbstluftwm"
 #define FF_WM_PRETTY_ICEWM "IceWM"
 #define FF_WM_PRETTY_SPECTRWM "spectrwm"
+#define FF_WM_PRETTY_DTWM "dtwm"
 
 
 #define FF_WM_PROTOCOL_TTY "TTY"
@@ -85,5 +84,3 @@ bool ffdsAppendDisplay(
     FFDisplayType type,
     bool primary,
     uint64_t id);
-
-#endif

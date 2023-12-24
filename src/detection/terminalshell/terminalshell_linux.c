@@ -5,7 +5,6 @@
 #include "common/thread.h"
 #include "util/stringUtils.h"
 
-#include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -68,38 +67,34 @@ static void getProcessInformation(pid_t pid, FFstrbuf* processName, FFstrbuf* ex
 
 static const char* getProcessNameAndPpid(pid_t pid, char* name, pid_t* ppid)
 {
-    const char* error = NULL;
-
     #ifdef __linux__
 
     char statFilePath[64];
     snprintf(statFilePath, sizeof(statFilePath), "/proc/%d/stat", (int)pid);
-    FILE* stat = fopen(statFilePath, "r");
-    if(stat == NULL)
-        return "fopen(statFilePath, \"r\") failed";
+    char buf[PROC_FILE_BUFFSIZ];
+    ssize_t nRead = ffReadFileData(statFilePath, sizeof(buf) - 1, buf);
+    if(nRead < 0)
+        return "ffReadFileData(statFilePath, sizeof(buf)-1, buf)";
+    buf[nRead] = '\0';
 
     *ppid = 0;
     if(
-        fscanf(stat, "%*s (%255[^)]) %*c %d", name, ppid) != 2 || //stat (comm) state ppid
+        sscanf(buf, "%*s (%255[^)]) %*c %d", name, ppid) != 2 || //stat (comm) state ppid
         !ffStrSet(name) ||
         *ppid == 0
     )
-        error = "fscanf(stat) failed";
-
-    fclose(stat);
+        return "sscanf(stat) failed";
 
     #elif defined(__APPLE__)
 
     struct proc_bsdshortinfo proc;
     if(proc_pidinfo(pid, PROC_PIDT_SHORTBSDINFO, 0, &proc, PROC_PIDT_SHORTBSDINFO_SIZE) <= 0)
-        error = "proc_pidinfo(pid) failed";
-    else
-    {
-        *ppid = (pid_t)proc.pbsi_ppid;
-        strncpy(name, proc.pbsi_comm, 16); //trancated to 16 chars
-    }
+        return "proc_pidinfo(pid) failed";
 
-    #else
+    *ppid = (pid_t)proc.pbsi_ppid;
+    strncpy(name, proc.pbsi_comm, 16); //trancated to 16 chars
+
+    #elif defined(__FreeBSD__)
 
     struct kinfo_proc proc;
     size_t size = sizeof(proc);
@@ -108,16 +103,18 @@ static const char* getProcessNameAndPpid(pid_t pid, char* name, pid_t* ppid)
         &proc, &size,
         NULL, 0
     ))
-        error = "sysctl(KERN_PROC_PID) failed";
-    else
-    {
-        *ppid = (pid_t)proc.ki_ppid;
-        strncpy(name, proc.ki_comm, COMMLEN);
-    }
+        return "sysctl(KERN_PROC_PID) failed";
+
+    *ppid = (pid_t)proc.ki_ppid;
+    strncpy(name, proc.ki_comm, COMMLEN);
+
+    #else
+
+    return "Unsupported platform";
 
     #endif
 
-    return error;
+    return NULL;
 }
 
 static void getTerminalShell(FFTerminalShellResult* result, pid_t pid)
@@ -140,6 +137,8 @@ static void getTerminalShell(FFTerminalShellResult* result, pid_t pid)
         strcasecmp(name, "gdb")                  == 0 ||
         strcasecmp(name, "lldb")                 == 0 ||
         strcasecmp(name, "login")                == 0 ||
+        strcasecmp(name, "ltrace")               == 0 ||
+        strcasecmp(name, "perf")                 == 0 ||
         strcasecmp(name, "guake-wrapped")        == 0 ||
         strcasestr(name, "debug")             != NULL ||
         strcasestr(name, "command-not-found") != NULL ||
@@ -164,6 +163,8 @@ static void getTerminalShell(FFTerminalShellResult* result, pid_t pid)
         strcasecmp(name, "pwsh")      == 0 ||
         strcasecmp(name, "nu")        == 0 ||
         strcasecmp(name, "git-shell") == 0 ||
+        strcasecmp(name, "elvish")    == 0 ||
+        strcasecmp(name, "oil.ovm")   == 0 ||
         (strcasecmp(name, "python") == 0 && getenv("XONSH_VERSION"))
     ) {
         if (result->shellProcessName.length == 0)
@@ -282,33 +283,7 @@ static void getUserShellFromEnv(FFTerminalShellResult* result)
     }
 }
 
-static void getShellVersionGeneric(FFstrbuf* exe, const char* exeName, FFstrbuf* version)
-{
-    FF_STRBUF_AUTO_DESTROY command = ffStrbufCreate();
-    ffStrbufAppendS(&command, "printf \"%s\" \"$");
-    ffStrbufAppendTransformS(&command, exeName, toupper);
-    ffStrbufAppendS(&command, "_VERSION\"");
-
-    ffProcessAppendStdOut(version, (char* const[]) {
-        "env",
-        "-i",
-        exe->chars,
-        "-c",
-        command.chars,
-        NULL
-    });
-    ffStrbufSubstrBeforeFirstC(version, '(');
-    ffStrbufRemoveStrings(version, 2, (const char*[]) { "-release", "release" });
-}
-
 bool fftsGetShellVersion(FFstrbuf* exe, const char* exeName, FFstrbuf* version);
-
-static void getShellVersion(FFstrbuf* exe, const char* exeName, FFstrbuf* version)
-{
-    ffStrbufClear(version);
-    if(!fftsGetShellVersion(exe, exeName, version))
-        getShellVersionGeneric(exe, exeName, version);
-}
 
 bool fftsGetTerminalVersion(FFstrbuf* processName, FFstrbuf* exe, FFstrbuf* version);
 
@@ -347,7 +322,7 @@ const FFTerminalShellResult* ffDetectTerminalShell()
     getUserShellFromEnv(&result);
 
     ffStrbufClear(&result.shellVersion);
-    getShellVersion(&result.shellExe, result.shellExeName, &result.shellVersion);
+    fftsGetShellVersion(&result.shellExe, result.shellExeName, &result.shellVersion);
 
     if(ffStrbufEqualS(&result.shellProcessName, "pwsh"))
         ffStrbufInitStatic(&result.shellPrettyName, "PowerShell");
@@ -355,6 +330,8 @@ const FFTerminalShellResult* ffDetectTerminalShell()
         ffStrbufInitStatic(&result.shellPrettyName, "nushell");
     else if(ffStrbufIgnCaseEqualS(&result.shellProcessName, "python") && getenv("XONSH_VERSION"))
         ffStrbufInitStatic(&result.shellPrettyName, "xonsh");
+    else if(ffStrbufIgnCaseEqualS(&result.shellProcessName, "oil.ovm"))
+        ffStrbufInitStatic(&result.shellPrettyName, "Oils");
     else
     {
         // https://github.com/fastfetch-cli/fastfetch/discussions/280#discussioncomment-3831734
@@ -364,7 +341,7 @@ const FFTerminalShellResult* ffDetectTerminalShell()
     if(result.terminalExeName[0] == '.' && ffStrEndsWith(result.terminalExeName, "-wrapped"))
     {
         // For NixOS. Ref: #510 and https://github.com/NixOS/nixpkgs/pull/249428
-        // We use terminalProcessName when detecting version and font, overriding it for simplication
+        // We use terminalProcessName when detecting version and font, overriding it for simplification
         ffStrbufSetNS(
             &result.terminalProcessName,
             (uint32_t) (strlen(result.terminalExeName) - strlen(".-wrapped")),
