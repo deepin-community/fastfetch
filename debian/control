@@ -3,7 +3,6 @@ Section: utils
 Priority: optional
 Maintainer: xiangzelong <xiangzelong@deepin.org>
 Build-Depends: debhelper-compat (= 13),
-                libpci-dev,
                 libvulkan-dev,
                 libwayland-dev,
                 libxrandr-dev,
@@ -13,13 +12,16 @@ Build-Depends: debhelper-compat (= 13),
                 libmagickcore-dev,
                 libxfconf-0-dev,
                 libsqlite3-dev,
-                libzstd-dev,
                 libegl-dev,
                 libglx-dev,
                 libosmesa6-dev,
                 ocl-icd-opencl-dev,
                 libnm-dev,
                 libpulse-dev,
+                libdrm-dev,
+                libddcutil-dev,
+                libchafa-dev,
+                directx-headers-dev,
                 cmake (>=3.12.0),
                 yyjson-dev (>=0.8),
 Standards-Version: 4.6.2.0
@@ -30,5 +32,5 @@ Section: utils
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Description: This is a neofetch-like tool for fetching system information and displaying them in a pretty way.
- It is written mainly in C, with performance and customizability in mind. 
+ It is written mainly in C, with performance and customizability in mind.
  Currently, Linux, Android, FreeBSD, MacOS and Windows 7+ are supported.

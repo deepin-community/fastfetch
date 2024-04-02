@@ -2,6 +2,7 @@
 #include "common/font.h"
 
 #include <string.h>
+#include <ctype.h>
 
 void ffFontInit(FFfont* font)
 {
@@ -10,6 +11,22 @@ void ffFontInit(FFfont* font)
     ffStrbufInit(&font->name);
     ffStrbufInit(&font->size);
     ffListInit(&font->styles, sizeof(FFstrbuf));
+}
+
+static void strbufAppendNSExcludingC(FFstrbuf* strbuf, uint32_t length, const char* value, char exclude)
+{
+    if(value == NULL || length == 0)
+        return;
+
+    ffStrbufEnsureFree(strbuf, length);
+
+    for(uint32_t i = 0; i < length; i++)
+    {
+        if(value[i] != exclude)
+        strbuf->chars[strbuf->length++] = value[i];
+    }
+
+    strbuf->chars[strbuf->length] = '\0';
 }
 
 static void fontInitPretty(FFfont* font)
@@ -50,59 +67,33 @@ void ffFontInitQt(FFfont* font, const char* data)
     //See https://doc.qt.io/qt-5/qfont.html#toString
 
     //Family
-    while(*data != ',' && *data != '\0')
-    {
-        ffStrbufAppendC(&font->name, *data);
-        ++data;
-    }
-    if(*data != '\0')
-        ++data;
+    data = ffStrbufAppendSUntilC(&font->name, data, ',');
     ffStrbufTrim(&font->name, ' ');
+    if (!data) goto exit;
+    data++;
 
     //Size
-    while(*data != ',' && *data != '\0')
-    {
-        ffStrbufAppendC(&font->size, *data);
-        ++data;
-    }
-    if(*data != '\0')
-        ++data;
+    data = ffStrbufAppendSUntilC(&font->size, data, ',');
     ffStrbufTrim(&font->size, ' ');
+    if (!data) goto exit;
+    data++;
 
-    #define FF_FONT_QT_SKIP_VALUE \
-        while(*data != ',' && *data != '\0') \
-            ++data; \
-        if(*data != '\0') \
-             ++data;
-
-    FF_FONT_QT_SKIP_VALUE //Pixel size
-    FF_FONT_QT_SKIP_VALUE //Style hint
-    FF_FONT_QT_SKIP_VALUE //Font weight
-    FF_FONT_QT_SKIP_VALUE //Font style
-    FF_FONT_QT_SKIP_VALUE //Underline
-    FF_FONT_QT_SKIP_VALUE //Strike out
-    FF_FONT_QT_SKIP_VALUE //Fixed pitch
-    FF_FONT_QT_SKIP_VALUE //Always 0
-
-    #undef FF_FONT_QT_SKIP_VALUE
-
-    while(*data != '\0')
+    //Style
+    data = strrchr(data, ',');
+    if (!data) goto exit;
+    data++;
+    if (isalpha(*data))
     {
-        while(*data == ' ')
-            ++data;
-
-        if(*data == '\0')
-            break;
-
-        FFstrbuf* style = ffListAdd(&font->styles);
-        ffStrbufInit(style);
-        while(*data != ' ' && *data != '\0')
+        do
         {
-            ffStrbufAppendC(style, *data);
-            ++data;
-        }
+            FFstrbuf* style = ffListAdd(&font->styles);
+            ffStrbufInit(style);
+            data = ffStrbufAppendSUntilC(style, data, ' ');
+            if (data) data++;
+        } while (data);
     }
 
+exit:
     fontInitPretty(font);
 }
 
@@ -155,7 +146,7 @@ static void fontPangoParseWord(const char** data, FFfont* font, FFstrbuf* altern
             ffStrbufInit(alternativeBuffer);
         }
 
-        ffStrbufAppendNSExludingC(alternativeBuffer, wordLength, wordStart, '-');
+        strbufAppendNSExcludingC(alternativeBuffer, wordLength, wordStart, '-');
 
         if(
             strncasecmp(wordStart, "Ultra ", 6) == 0 ||
@@ -171,7 +162,7 @@ static void fontPangoParseWord(const char** data, FFfont* font, FFstrbuf* altern
 
     if(alternativeBuffer != NULL)
     {
-        ffStrbufAppendNSExludingC(alternativeBuffer, wordLength, wordStart, '-');
+        strbufAppendNSExcludingC(alternativeBuffer, wordLength, wordStart, '-');
         return;
     }
 
@@ -195,14 +186,10 @@ void ffFontInitValues(FFfont* font, const char* name, const char* size)
     ffFontInit(font);
 
     ffStrbufAppendS(&font->name, name);
+    ffStrbufTrim(&font->name, '"');
     ffStrbufAppendS(&font->size, size);
 
     fontInitPretty(font);
-}
-
-void ffFontInitCopy(FFfont* font, const char* name)
-{
-    ffFontInitValues(font, name, NULL);
 }
 
 void ffFontInitWithSpace(FFfont* font, const char* rawName)

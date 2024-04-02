@@ -9,6 +9,7 @@ void ffOptionsInitModules(FFOptionsModules* options)
     ffInitBoardOptions(&options->board);
     ffInitBreakOptions(&options->break_);
     ffInitBrightnessOptions(&options->brightness);
+    ffInitCameraOptions(&options->camera);
     ffInitCPUOptions(&options->cpu);
     ffInitCPUUsageOptions(&options->cpuUsage);
     ffInitChassisOptions(&options->chassis);
@@ -47,9 +48,10 @@ void ffOptionsInitModules(FFOptionsModules* options)
     ffInitShellOptions(&options->shell);
     ffInitSoundOptions(&options->sound);
     ffInitSwapOptions(&options->swap);
-    ffInitTerminalFontOptions(&options->terminalFont);
     ffInitTerminalOptions(&options->terminal);
+    ffInitTerminalFontOptions(&options->terminalFont);
     ffInitTerminalSizeOptions(&options->terminalSize);
+    ffInitTerminalThemeOptions(&options->terminalTheme);
     ffInitThemeOptions(&options->theme);
     ffInitTitleOptions(&options->title);
     ffInitUptimeOptions(&options->uptime);
@@ -71,6 +73,7 @@ void ffOptionsDestroyModules(FFOptionsModules* options)
     ffDestroyBoardOptions(&options->board);
     ffDestroyBreakOptions(&options->break_);
     ffDestroyBrightnessOptions(&options->brightness);
+    ffDestroyCameraOptions(&options->camera);
     ffDestroyCPUOptions(&options->cpu);
     ffDestroyCPUUsageOptions(&options->cpuUsage);
     ffDestroyChassisOptions(&options->chassis);
@@ -109,9 +112,10 @@ void ffOptionsDestroyModules(FFOptionsModules* options)
     ffDestroyShellOptions(&options->shell);
     ffDestroySoundOptions(&options->sound);
     ffDestroySwapOptions(&options->swap);
-    ffDestroyTerminalFontOptions(&options->terminalFont);
     ffDestroyTerminalOptions(&options->terminal);
+    ffDestroyTerminalFontOptions(&options->terminalFont);
     ffDestroyTerminalSizeOptions(&options->terminalSize);
+    ffDestroyTerminalThemeOptions(&options->terminalTheme);
     ffDestroyThemeOptions(&options->theme);
     ffDestroyTitleOptions(&options->title);
     ffDestroyUptimeOptions(&options->uptime);

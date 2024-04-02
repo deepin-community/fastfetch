@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.12.0) # target_link_libraries with OBJECT libs & project homepage url
 
 project(fastfetch
-    VERSION 2.4.0
+    VERSION 2.8.10
     LANGUAGES C
     DESCRIPTION "Fast neofetch-like system information tool"
     HOMEPAGE_URL "https://github.com/fastfetch-cli/fastfetch"
@@ -42,7 +42,6 @@ include(CheckIncludeFile)
 
 include(CMakeDependentOption)
 
-cmake_dependent_option(ENABLE_LIBPCI "Enable libpci" ON "LINUX OR BSD" OFF)
 cmake_dependent_option(ENABLE_VULKAN "Enable vulkan" ON "LINUX OR APPLE OR BSD OR WIN32 OR ANDROID" OFF)
 cmake_dependent_option(ENABLE_WAYLAND "Enable wayland-client" ON "LINUX OR BSD" OFF)
 cmake_dependent_option(ENABLE_XCB_RANDR "Enable xcb-randr" ON "LINUX OR BSD" OFF)
@@ -66,16 +65,20 @@ cmake_dependent_option(ENABLE_OSMESA "Enable osmesa" ON "LINUX OR BSD" OFF)
 cmake_dependent_option(ENABLE_OPENCL "Enable opencl" ON "LINUX OR BSD OR WIN32" OFF)
 cmake_dependent_option(ENABLE_LIBNM "Enable libnm" ON "LINUX" OFF)
 cmake_dependent_option(ENABLE_FREETYPE "Enable freetype" ON "ANDROID" OFF)
-cmake_dependent_option(ENABLE_PULSE "Enable pulse" ON "LINUX OR BSD" OFF)
+cmake_dependent_option(ENABLE_PULSE "Enable pulse" ON "LINUX" OFF)
 cmake_dependent_option(ENABLE_DDCUTIL "Enable ddcutil" ON "LINUX" OFF)
 cmake_dependent_option(ENABLE_DIRECTX_HEADERS "Enable DirectX headers for WSL" ON "LINUX" OFF)
 cmake_dependent_option(ENABLE_THREADS "Enable multithreading" ON "Threads_FOUND" OFF)
-cmake_dependent_option(ENABLE_PCI_MEMORY "Enable detecting GPU memory size with libpci" OFF "LINUX OR BSD" OFF)
 
 option(ENABLE_SYSTEM_YYJSON "Use system provided (instead of fastfetch embedded) yyjson library" OFF)
 option(ENABLE_ASAN "Build fastfetch with ASAN (address sanitizer)" OFF)
+option(ENABLE_PROPRIETARY_GPU_DRIVER_API "Enable proprietary GPU driver API (NVML, IGCL and AGS)" ON)
 option(BUILD_TESTS "Build tests" OFF) # Also create test executables
 option(SET_TWEAK "Add tweak to project version" ON) # This is set to off by github actions for release builds
+
+if (LINUX)
+    set(CUSTOM_PCI_IDS_PATH "" CACHE STRING "Custom path to file pci.ids, defaults to `/usr/share/hwdata/pci.ids`")
+endif()
 
 ####################
 # Compiler options #
@@ -109,12 +112,8 @@ endif()
 
 if(WIN32)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--tsaware -Wl,--build-id -Wl,--subsystem,console:6.1,--major-os-version,6,--minor-os-version,1")
-endif()
-
-# Used for dlopen finding dylibs installed by homebrew
-# `/opt/homebrew/lib` is not on in dlopen search path by default
-if(APPLE AND DEFINED ENV{HOMEBREW_PREFIX})
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath,$ENV{HOMEBREW_PREFIX}/lib")
+elseif(APPLE)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fobjc-arc")
 endif()
 
 set(FASTFETCH_FLAGS_DEBUG "-fno-omit-frame-pointer")
@@ -123,7 +122,7 @@ if(ENABLE_ASAN)
     set(FASTFETCH_FLAGS_DEBUG "${FASTFETCH_FLAGS_DEBUG} -fsanitize=address")
 endif()
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${FASTFETCH_FLAGS_DEBUG}")
-set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} ${FASTFETCH_FLAGS_DEBUG}")
+set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} ${FASTFETCH_FLAGS_DEBUG} -fstack-protector-all -fno-delete-null-pointer-checks")
 if(NOT WIN32)
     set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} -rdynamic")
 endif()
@@ -234,10 +233,9 @@ endif()
 
 fastfetch_encode_c_string("${DATATEXT_JSON_HELP}" DATATEXT_JSON_HELP)
 fastfetch_load_text(src/data/structure.txt DATATEXT_STRUCTURE)
-fastfetch_load_text(src/data/help.txt DATATEXT_HELP)
+fastfetch_load_text(src/data/help_footer.txt DATATEXT_HELP_FOOTER)
 fastfetch_load_text(src/data/help_color.txt DATATEXT_HELP_COLOR)
 fastfetch_load_text(src/data/help_format.txt DATATEXT_HELP_FORMAT)
-fastfetch_load_text(src/data/help_config.txt DATATEXT_HELP_CONFIG)
 
 configure_file(src/fastfetch_config.h.in fastfetch_config.h @ONLY)
 configure_file(src/fastfetch_datatext.h.in fastfetch_datatext.h @ONLY)
@@ -268,7 +266,7 @@ file(GENERATE OUTPUT logo_builtin.h CONTENT "${LOGO_BUILTIN_H}")
 #######################
 
 set(LIBFASTFETCH_SRC
-    src/common/bar.c
+    src/common/percent.c
     src/common/commandoption.c
     src/common/font.c
     src/common/format.c
@@ -282,6 +280,7 @@ set(LIBFASTFETCH_SRC
     src/common/printing.c
     src/common/properties.c
     src/common/settings.c
+    src/common/temps.c
     src/detection/chassis/chassis.c
     src/detection/cpu/cpu.c
     src/detection/cpuusage/cpuusage.c
@@ -290,13 +289,13 @@ set(LIBFASTFETCH_SRC
     src/detection/displayserver/displayserver.c
     src/detection/font/font.c
     src/detection/gpu/gpu.c
-    src/detection/locale/locale.c
     src/detection/media/media.c
     src/detection/netio/netio.c
     src/detection/opencl/opencl.c
     src/detection/os/os.c
     src/detection/packages/packages.c
     src/detection/publicip/publicip.c
+    src/detection/terminaltheme/terminaltheme.c
     src/detection/terminalfont/terminalfont.c
     src/detection/terminalshell/terminalshell.c
     src/detection/version/version.c
@@ -313,6 +312,7 @@ set(LIBFASTFETCH_SRC
     src/modules/board/board.c
     src/modules/brightness/brightness.c
     src/modules/break/break.c
+    src/modules/camera/camera.c
     src/modules/chassis/chassis.c
     src/modules/colors/colors.c
     src/modules/cpu/cpu.c
@@ -352,6 +352,7 @@ set(LIBFASTFETCH_SRC
     src/modules/swap/swap.c
     src/modules/media/media.c
     src/modules/terminal/terminal.c
+    src/modules/terminaltheme/terminaltheme.c
     src/modules/terminalfont/terminalfont.c
     src/modules/terminalsize/terminalsize.c
     src/modules/theme/theme.c
@@ -374,7 +375,6 @@ set(LIBFASTFETCH_SRC
     src/util/FFlist.c
     src/util/FFstrbuf.c
     src/util/platform/FFPlatform.c
-    src/util/stringUtils.c
     src/util/smbiosHelper.c
 )
 
@@ -405,12 +405,13 @@ if(LINUX)
         src/detection/displayserver/linux/xlib.c
         src/detection/font/font_linux.c
         src/detection/gpu/gpu_linux.c
-        src/detection/gpu/gpu_nvidia.c
+        src/detection/gpu/gpu_pci.c
         src/detection/gtk_qt/gtk.c
         src/detection/host/host_linux.c
         src/detection/icons/icons_linux.c
         src/detection/libc/libc_linux.c
         src/detection/lm/lm_linux.c
+        src/detection/locale/locale_linux.c
         src/detection/localip/localip_linux.c
         src/detection/gamepad/gamepad_linux.c
         src/detection/media/media_linux.c
@@ -420,7 +421,7 @@ if(LINUX)
         src/detection/opengl/opengl_linux.c
         src/detection/os/os_linux.c
         src/detection/packages/packages_linux.c
-        src/detection/poweradapter/poweradapter_nosupport.c
+        src/detection/poweradapter/poweradapter_linux.c
         src/detection/processes/processes_linux.c
         src/detection/gtk_qt/qt.c
         src/detection/sound/sound_linux.c
@@ -437,6 +438,7 @@ if(LINUX)
         src/detection/wm/wm_nosupport.c
         src/detection/de/de_linux.c
         src/detection/wmtheme/wmtheme_linux.c
+        src/detection/camera/camera_linux.c
         src/util/platform/FFPlatform_unix.c
     )
 elseif(ANDROID)
@@ -464,6 +466,7 @@ elseif(ANDROID)
         src/detection/icons/icons_nosupport.c
         src/detection/libc/libc_android.c
         src/detection/lm/lm_nosupport.c
+        src/detection/locale/locale_linux.c
         src/detection/localip/localip_linux.c
         src/detection/gamepad/gamepad_nosupport.c
         src/detection/media/media_nosupport.c
@@ -489,6 +492,7 @@ elseif(ANDROID)
         src/detection/wm/wm_nosupport.c
         src/detection/de/de_nosupport.c
         src/detection/wmtheme/wmtheme_nosupport.c
+        src/detection/camera/camera_android.c
         src/util/platform/FFPlatform_unix.c
     )
 elseif(BSD)
@@ -518,13 +522,14 @@ elseif(BSD)
         src/detection/displayserver/linux/xcb.c
         src/detection/displayserver/linux/xlib.c
         src/detection/font/font_linux.c
-        src/detection/gpu/gpu_linux.c
-        src/detection/gpu/gpu_nvidia.c
+        src/detection/gpu/gpu_bsd.c
+        src/detection/gpu/gpu_pci.c
         src/detection/gtk_qt/gtk.c
         src/detection/host/host_bsd.c
         src/detection/lm/lm_linux.c
         src/detection/icons/icons_linux.c
         src/detection/libc/libc_bsd.c
+        src/detection/locale/locale_linux.c
         src/detection/localip/localip_linux.c
         src/detection/gamepad/gamepad_bsd.c
         src/detection/media/media_linux.c
@@ -537,7 +542,7 @@ elseif(BSD)
         src/detection/poweradapter/poweradapter_nosupport.c
         src/detection/processes/processes_bsd.c
         src/detection/gtk_qt/qt.c
-        src/detection/sound/sound_linux.c
+        src/detection/sound/sound_bsd.c
         src/detection/swap/swap_bsd.c
         src/detection/temps/temps_bsd.c
         src/detection/terminalfont/terminalfont_linux.c
@@ -551,6 +556,7 @@ elseif(BSD)
         src/detection/wm/wm_nosupport.c
         src/detection/de/de_linux.c
         src/detection/wmtheme/wmtheme_linux.c
+        src/detection/camera/camera_linux.c
         src/util/platform/FFPlatform_unix.c
     )
 elseif(APPLE)
@@ -575,10 +581,12 @@ elseif(APPLE)
         src/detection/displayserver/displayserver_apple.c
         src/detection/font/font_apple.m
         src/detection/gpu/gpu_apple.c
+        src/detection/gpu/gpu_apple.m
         src/detection/host/host_apple.c
         src/detection/lm/lm_nosupport.c
         src/detection/icons/icons_nosupport.c
         src/detection/libc/libc_apple.c
+        src/detection/locale/locale_linux.c
         src/detection/localip/localip_linux.c
         src/detection/gamepad/gamepad_apple.c
         src/detection/media/media_apple.m
@@ -599,11 +607,12 @@ elseif(APPLE)
         src/detection/theme/theme_nosupport.c
         src/detection/uptime/uptime_bsd.c
         src/detection/users/users_linux.c
-        src/detection/wallpaper/wallpaper_apple.c
+        src/detection/wallpaper/wallpaper_apple.m
         src/detection/wifi/wifi_apple.m
         src/detection/wm/wm_apple.c
         src/detection/de/de_nosupport.c
         src/detection/wmtheme/wmtheme_apple.m
+        src/detection/camera/camera_apple.m
         src/util/apple/cf_helpers.c
         src/util/apple/osascript.m
         src/util/platform/FFPlatform_unix.c
@@ -619,7 +628,7 @@ elseif(WIN32)
         src/detection/bluetooth/bluetooth_windows.c
         src/detection/board/board_windows.c
         src/detection/brightness/brightness_windows.cpp
-        src/detection/chassis/chassis_windows.cpp
+        src/detection/chassis/chassis_windows.c
         src/detection/cpu/cpu_windows.c
         src/detection/cpuusage/cpuusage_windows.c
         src/detection/cursor/cursor_windows.c
@@ -629,11 +638,11 @@ elseif(WIN32)
         src/detection/displayserver/displayserver_windows.c
         src/detection/font/font_windows.c
         src/detection/gpu/gpu_windows.c
-        src/detection/gpu/gpu_nvidia.c
         src/detection/host/host_windows.c
         src/detection/icons/icons_windows.c
         src/detection/libc/libc_windows.cpp
         src/detection/lm/lm_nosupport.c
+        src/detection/locale/locale_windows.c
         src/detection/localip/localip_windows.c
         src/detection/gamepad/gamepad_windows.c
         src/detection/media/media_nosupport.c
@@ -659,6 +668,7 @@ elseif(WIN32)
         src/detection/wm/wm_windows.cpp
         src/detection/de/de_nosupport.c
         src/detection/wmtheme/wmtheme_windows.c
+        src/detection/camera/camera_windows.cpp
         src/util/windows/getline.c
         src/util/windows/com.cpp
         src/util/windows/registry.c
@@ -671,6 +681,17 @@ endif()
 if(ENABLE_DIRECTX_HEADERS)
     message(STATUS "Enabling DirectX headers for WSL")
     list(APPEND LIBFASTFETCH_SRC src/detection/gpu/gpu_wsl.cpp)
+endif()
+
+if(ENABLE_PROPRIETARY_GPU_DRIVER_API AND (LINUX OR BSD OR WIN32))
+    message(STATUS "Enabling proprietary GPU driver API")
+    if(LINUX OR BSD OR WIN32)
+        list(APPEND LIBFASTFETCH_SRC src/detection/gpu/gpu_nvidia.c)
+    endif()
+    if(WIN32)
+        list(APPEND LIBFASTFETCH_SRC src/detection/gpu/gpu_intel.c)
+        list(APPEND LIBFASTFETCH_SRC src/detection/gpu/gpu_amd.c)
+    endif()
 endif()
 
 include(CheckFunctionExists)
@@ -696,9 +717,20 @@ add_library(libfastfetch OBJECT
     ${LIBFASTFETCH_SRC}
 )
 
+if(ENABLE_PROPRIETARY_GPU_DRIVER_API AND (LINUX OR BSD OR WIN32))
+    target_compile_definitions(libfastfetch PRIVATE FF_USE_PROPRIETARY_GPU_DRIVER_API)
+endif()
+
 if(yyjson_FOUND)
     target_compile_definitions(libfastfetch PRIVATE FF_USE_SYSTEM_YYJSON)
-    target_link_libraries(libfastfetch PRIVATE yyjson)
+    target_link_libraries(libfastfetch PRIVATE yyjson::yyjson)
+    # `target_link_libraries(yyjson::yyjson)` sets rpath implicitly
+else()
+    # Used for dlopen finding dylibs installed by homebrew
+    # `/opt/homebrew/lib` is not on in dlopen search path by default
+    if(APPLE)
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath,/opt/homebrew/lib -Wl,-rpath,/usr/local/lib")
+    endif()
 endif()
 
 if(LINUX AND EXISTS "/lib/ld-musl-${CMAKE_HOST_SYSTEM_PROCESSOR}.so.1")
@@ -732,6 +764,11 @@ endif()
 
 if(HAVE_WCWIDTH)
     target_compile_definitions(libfastfetch PRIVATE FF_HAVE_WCWIDTH)
+endif()
+
+if(NOT "${CUSTOM_PCI_IDS_PATH}" STREQUAL "")
+    message(STATUS "Custom file path of pci.ids: ${CUSTOM_PCI_IDS_PATH}")
+    target_compile_definitions(libfastfetch PRIVATE FF_CUSTOM_PCI_IDS_PATH=${CUSTOM_PCI_IDS_PATH})
 endif()
 
 function(ff_lib_enable VARNAME PKGCONFIG_NAMES CMAKE_NAME)
@@ -770,10 +807,6 @@ function(ff_lib_enable VARNAME PKGCONFIG_NAMES CMAKE_NAME)
     endforeach()
 endfunction()
 
-ff_lib_enable(LIBPCI
-    "libpci"
-    "Pci"
-)
 ff_lib_enable(VULKAN
     "vulkan"
     "Vulkan"
@@ -896,13 +929,16 @@ if(LINUX)
     )
 elseif(APPLE)
     target_link_libraries(libfastfetch
+        PRIVATE "-framework AVFoundation"
         PRIVATE "-framework Cocoa"
         PRIVATE "-framework CoreFoundation"
         PRIVATE "-framework CoreAudio"
+        PRIVATE "-framework CoreMedia"
         PRIVATE "-framework CoreVideo"
         PRIVATE "-framework CoreWLAN"
         PRIVATE "-framework IOBluetooth"
         PRIVATE "-framework IOKit"
+        PRIVATE "-framework Metal"
         PRIVATE "-framework OpenGL"
         PRIVATE "-framework OpenCL"
         PRIVATE "-framework SystemConfiguration"
@@ -988,6 +1024,13 @@ set(CMAKE_CXX_IMPLICIT_LINK_LIBRARIES "")
 set(CMAKE_CXX_IMPLICIT_LINK_DIRECTORIES "")
 set_target_properties(fastfetch PROPERTIES LINKER_LANGUAGE C)
 set_target_properties(flashfetch PROPERTIES LINKER_LANGUAGE C)
+
+if(yyjson_FOUND)
+    target_compile_definitions(fastfetch PRIVATE FF_USE_SYSTEM_YYJSON)
+    target_link_libraries(fastfetch PRIVATE yyjson::yyjson)
+    target_compile_definitions(flashfetch PRIVATE FF_USE_SYSTEM_YYJSON)
+    target_link_libraries(flashfetch PRIVATE yyjson::yyjson)
+endif()
 
 if(WIN32)
     set(TARGET_NAME fastfetch)
@@ -1075,6 +1118,14 @@ install(
 ##################
 
 set(CPACK_GENERATOR "TGZ;ZIP")
+if(APPLE)
+    string(TOLOWER "${CMAKE_PROJECT_NAME}-macos-universal" CPACK_PACKAGE_FILE_NAME)
+else() # We don't use this in Windows
+    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
+        set(CMAKE_SYSTEM_PROCESSOR "amd64")
+    endif()
+    string(TOLOWER "${CMAKE_PROJECT_NAME}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}" CPACK_PACKAGE_FILE_NAME)
+endif()
 
 if(LINUX)
     set(CPACK_GENERATOR "${CPACK_GENERATOR};DEB;RPM")
@@ -1091,7 +1142,7 @@ set(CPACK_SET_DESTDIR ON)
 set(CPACK_PACKAGE_CONTACT "Linus Dierheimer <Linus@Dierheimer.de>")
 set(CPACK_PACKAGE_DESCRIPTION "\
 fastfetch is a neofetch-like tool for fetching system information and displaying them in a pretty way. \
-It is written in c to achieve much better performance.\
+It is written mostly in C to achieve much better performance.\
 ")
 
 include(CPack)

@@ -4,7 +4,7 @@
 #include "modules/chassis/chassis.h"
 #include "util/stringUtils.h"
 
-#define FF_CHASSIS_NUM_FORMAT_ARGS 3
+#define FF_CHASSIS_NUM_FORMAT_ARGS 4
 
 void ffPrintChassis(FFChassisOptions* options)
 {
@@ -12,18 +12,19 @@ void ffPrintChassis(FFChassisOptions* options)
     ffStrbufInit(&result.type);
     ffStrbufInit(&result.vendor);
     ffStrbufInit(&result.version);
+    ffStrbufInit(&result.serial);
 
-    const char* error = ffDetectChassis(&result, options);
+    const char* error = ffDetectChassis(&result);
 
     if(error)
     {
-        ffPrintError(FF_CHASSIS_MODULE_NAME, 0, &options->moduleArgs, "%s", error);
+        ffPrintError(FF_CHASSIS_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "%s", error);
         goto exit;
     }
 
     if(result.type.length == 0)
     {
-        ffPrintError(FF_CHASSIS_MODULE_NAME, 0, &options->moduleArgs, "chassis_type is not set by O.E.M.");
+        ffPrintError(FF_CHASSIS_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "chassis_type is not set by O.E.M.");
         goto exit;
     }
 
@@ -37,17 +38,19 @@ void ffPrintChassis(FFChassisOptions* options)
     }
     else
     {
-        ffPrintFormat(FF_CHASSIS_MODULE_NAME, 0, &options->moduleArgs, FF_CHASSIS_NUM_FORMAT_ARGS, (FFformatarg[]) {
+        FF_PRINT_FORMAT_CHECKED(FF_CHASSIS_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_CHASSIS_NUM_FORMAT_ARGS, ((FFformatarg[]) {
             {FF_FORMAT_ARG_TYPE_STRBUF, &result.type},
             {FF_FORMAT_ARG_TYPE_STRBUF, &result.vendor},
             {FF_FORMAT_ARG_TYPE_STRBUF, &result.version},
-        });
+            {FF_FORMAT_ARG_TYPE_STRBUF, &result.serial},
+        }));
     }
 
 exit:
     ffStrbufDestroy(&result.type);
     ffStrbufDestroy(&result.vendor);
     ffStrbufDestroy(&result.version);
+    ffStrbufDestroy(&result.serial);
 }
 
 bool ffParseChassisCommandOptions(FFChassisOptions* options, const char* key, const char* value)
@@ -56,14 +59,6 @@ bool ffParseChassisCommandOptions(FFChassisOptions* options, const char* key, co
     if (!subKey) return false;
     if (ffOptionParseModuleArgs(key, subKey, value, &options->moduleArgs))
         return true;
-
-    #ifdef _WIN32
-    if (ffStrEqualsIgnCase(subKey, "use-wmi"))
-    {
-        options->useWmi = ffOptionParseBoolean(value);
-        return true;
-    }
-    #endif
 
     return false;
 }
@@ -81,15 +76,7 @@ void ffParseChassisJsonObject(FFChassisOptions* options, yyjson_val* module)
         if (ffJsonConfigParseModuleArgs(key, val, &options->moduleArgs))
             continue;
 
-        #ifdef _WIN32
-        if (ffStrEqualsIgnCase(key, "useWmi"))
-        {
-            options->useWmi = yyjson_get_bool(val);
-            continue;
-        }
-        #endif
-
-        ffPrintError(FF_CHASSIS_MODULE_NAME, 0, &options->moduleArgs, "Unknown JSON key %s", key);
+        ffPrintError(FF_CHASSIS_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "Unknown JSON key %s", key);
     }
 }
 
@@ -99,11 +86,6 @@ void ffGenerateChassisJsonConfig(FFChassisOptions* options, yyjson_mut_doc* doc,
     ffInitChassisOptions(&defaultOptions);
 
     ffJsonConfigGenerateModuleArgsConfig(doc, module, &defaultOptions.moduleArgs, &options->moduleArgs);
-
-    #ifdef _WIN32
-    if (options->useWmi != defaultOptions.useWmi)
-        yyjson_mut_obj_add_bool(doc, module, "useWmi", options->useWmi);
-    #endif
 }
 
 void ffGenerateChassisJsonResult(FF_MAYBE_UNUSED FFChassisOptions* options, yyjson_mut_doc* doc, yyjson_mut_val* module)
@@ -112,8 +94,9 @@ void ffGenerateChassisJsonResult(FF_MAYBE_UNUSED FFChassisOptions* options, yyjs
     ffStrbufInit(&result.type);
     ffStrbufInit(&result.vendor);
     ffStrbufInit(&result.version);
+    ffStrbufInit(&result.serial);
 
-    const char* error = ffDetectChassis(&result, options);
+    const char* error = ffDetectChassis(&result);
 
     if (error)
     {
@@ -131,20 +114,23 @@ void ffGenerateChassisJsonResult(FF_MAYBE_UNUSED FFChassisOptions* options, yyjs
     yyjson_mut_obj_add_strbuf(doc, obj, "type", &result.type);
     yyjson_mut_obj_add_strbuf(doc, obj, "vendor", &result.vendor);
     yyjson_mut_obj_add_strbuf(doc, obj, "version", &result.version);
+    yyjson_mut_obj_add_strbuf(doc, obj, "serial", &result.serial);
 
 exit:
     ffStrbufDestroy(&result.type);
     ffStrbufDestroy(&result.vendor);
     ffStrbufDestroy(&result.version);
+    ffStrbufDestroy(&result.serial);
 }
 
 void ffPrintChassisHelpFormat(void)
 {
-    ffPrintModuleFormatHelp(FF_CHASSIS_MODULE_NAME, "{1}", FF_CHASSIS_NUM_FORMAT_ARGS, (const char* []) {
+    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_CHASSIS_MODULE_NAME, "{1}", FF_CHASSIS_NUM_FORMAT_ARGS, ((const char* []) {
         "chassis type",
         "chassis vendor",
-        "chassis version"
-    });
+        "chassis version",
+        "chassis serial number",
+    }));
 }
 
 void ffInitChassisOptions(FFChassisOptions* options)
@@ -161,10 +147,6 @@ void ffInitChassisOptions(FFChassisOptions* options)
         ffGenerateChassisJsonConfig
     );
     ffOptionInitModuleArg(&options->moduleArgs);
-
-    #ifdef _WIN32
-    options->useWmi = false;
-    #endif
 }
 
 void ffDestroyChassisOptions(FFChassisOptions* options)

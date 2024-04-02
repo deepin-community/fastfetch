@@ -11,8 +11,8 @@ const char* ffDetectCPUImpl(const FFCPUOptions* options, FFCPUResult* cpu)
     cpu->coresLogical = cpu->coresPhysical;
     cpu->coresOnline = cpu->coresPhysical;
 
-    cpu->frequencyMin = ffSysctlGetInt("hw.clockrate", 0) / 1000.0;
-    cpu->frequencyMax = cpu->frequencyMin;
+    int clockRate = ffSysctlGetInt("hw.clockrate", 0);
+    cpu->frequencyBase = clockRate <= 0 ? 0.0/0.0 : clockRate / 1000.0;
     cpu->temperature = FF_CPU_TEMP_UNSET;
 
     if (options->temp)

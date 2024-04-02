@@ -4,7 +4,7 @@
 #include "modules/board/board.h"
 #include "util/stringUtils.h"
 
-#define FF_BOARD_NUM_FORMAT_ARGS 3
+#define FF_BOARD_NUM_FORMAT_ARGS 4
 
 void ffPrintBoard(FFBoardOptions* options)
 {
@@ -12,17 +12,18 @@ void ffPrintBoard(FFBoardOptions* options)
     ffStrbufInit(&result.name);
     ffStrbufInit(&result.vendor);
     ffStrbufInit(&result.version);
-    const char* error = ffDetectBoard(&result);
+    ffStrbufInit(&result.serial);
 
+    const char* error = ffDetectBoard(&result);
     if(error)
     {
-        ffPrintError(FF_BOARD_MODULE_NAME, 0, &options->moduleArgs, "%s", error);
+        ffPrintError(FF_BOARD_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "%s", error);
         goto exit;
     }
 
     if(result.name.length == 0)
     {
-        ffPrintError(FF_BOARD_MODULE_NAME, 0, &options->moduleArgs, "board_name is not set.");
+        ffPrintError(FF_BOARD_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "board_name is not set.");
         goto exit;
     }
 
@@ -36,17 +37,19 @@ void ffPrintBoard(FFBoardOptions* options)
     }
     else
     {
-        ffPrintFormat(FF_BOARD_MODULE_NAME, 0, &options->moduleArgs, FF_BOARD_NUM_FORMAT_ARGS, (FFformatarg[]) {
+        FF_PRINT_FORMAT_CHECKED(FF_BOARD_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_BOARD_NUM_FORMAT_ARGS, ((FFformatarg[]) {
             {FF_FORMAT_ARG_TYPE_STRBUF, &result.name},
             {FF_FORMAT_ARG_TYPE_STRBUF, &result.vendor},
             {FF_FORMAT_ARG_TYPE_STRBUF, &result.version},
-        });
+            {FF_FORMAT_ARG_TYPE_STRBUF, &result.serial},
+        }));
     }
 
 exit:
     ffStrbufDestroy(&result.name);
     ffStrbufDestroy(&result.vendor);
     ffStrbufDestroy(&result.version);
+    ffStrbufDestroy(&result.serial);
 }
 
 bool ffParseBoardCommandOptions(FFBoardOptions* options, const char* key, const char* value)
@@ -72,7 +75,7 @@ void ffParseBoardJsonObject(FFBoardOptions* options, yyjson_val* module)
         if (ffJsonConfigParseModuleArgs(key, val, &options->moduleArgs))
             continue;
 
-        ffPrintError(FF_BOARD_MODULE_NAME, 0, &options->moduleArgs, "Unknown JSON key %s", key);
+        ffPrintError(FF_BOARD_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "Unknown JSON key %s", key);
     }
 }
 
@@ -90,6 +93,7 @@ void ffGenerateBoardJsonResult(FF_MAYBE_UNUSED FFBoardOptions* options, yyjson_m
     ffStrbufInit(&board.name);
     ffStrbufInit(&board.vendor);
     ffStrbufInit(&board.version);
+    ffStrbufInit(&board.serial);
 
     const char* error = ffDetectBoard(&board);
 
@@ -109,20 +113,23 @@ void ffGenerateBoardJsonResult(FF_MAYBE_UNUSED FFBoardOptions* options, yyjson_m
     yyjson_mut_obj_add_strbuf(doc, obj, "name", &board.name);
     yyjson_mut_obj_add_strbuf(doc, obj, "vendor", &board.vendor);
     yyjson_mut_obj_add_strbuf(doc, obj, "version", &board.version);
+    yyjson_mut_obj_add_strbuf(doc, obj, "serial", &board.serial);
 
 exit:
     ffStrbufDestroy(&board.name);
     ffStrbufDestroy(&board.vendor);
     ffStrbufDestroy(&board.version);
+    ffStrbufDestroy(&board.serial);
 }
 
 void ffPrintBoardHelpFormat(void)
 {
-    ffPrintModuleFormatHelp(FF_BOARD_MODULE_NAME, "{1} ({3})", FF_BOARD_NUM_FORMAT_ARGS, (const char* []) {
+    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_BOARD_MODULE_NAME, "{1} ({3})", FF_BOARD_NUM_FORMAT_ARGS, ((const char* []) {
         "board name",
         "board vendor",
-        "board version"
-    });
+        "board version",
+        "board serial number",
+    }));
 }
 
 void ffInitBoardOptions(FFBoardOptions* options)

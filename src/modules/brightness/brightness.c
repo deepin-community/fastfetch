@@ -1,4 +1,4 @@
-#include "common/bar.h"
+#include "common/percent.h"
 #include "common/printing.h"
 #include "common/jsonconfig.h"
 #include "detection/brightness/brightness.h"
@@ -15,13 +15,13 @@ void ffPrintBrightness(FFBrightnessOptions* options)
 
     if(error)
     {
-        ffPrintError(FF_BRIGHTNESS_MODULE_NAME, 0, &options->moduleArgs, "%s", error);
+        ffPrintError(FF_BRIGHTNESS_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "%s", error);
         return;
     }
 
     if(result.length == 0)
     {
-        ffPrintError(FF_BRIGHTNESS_MODULE_NAME, 0, &options->moduleArgs, "No result is detected.");
+        ffPrintError(FF_BRIGHTNESS_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "No result is detected.");
         return;
     }
 
@@ -37,10 +37,10 @@ void ffPrintBrightness(FFBrightnessOptions* options)
         else
         {
             uint32_t moduleIndex = result.length == 1 ? 0 : index + 1;
-            ffParseFormatString(&key, &options->moduleArgs.key, 2, (FFformatarg[]){
+            FF_PARSE_FORMAT_STRING_CHECKED(&key, &options->moduleArgs.key, 2, ((FFformatarg[]){
                 {FF_FORMAT_ARG_TYPE_UINT, &moduleIndex},
                 {FF_FORMAT_ARG_TYPE_STRBUF, &item->name}
-            });
+            }));
         }
 
         const double percent = (item->current - item->min) / (item->max - item->min) * 100;
@@ -52,7 +52,7 @@ void ffPrintBrightness(FFBrightnessOptions* options)
 
             if (instance.config.display.percentType & FF_PERCENTAGE_TYPE_BAR_BIT)
             {
-                ffAppendPercentBar(&str, percent, 0, 100, 100);
+                ffPercentAppendBar(&str, percent, options->percent);
             }
 
             if(instance.config.display.percentType & FF_PERCENTAGE_TYPE_NUM_BIT)
@@ -60,7 +60,7 @@ void ffPrintBrightness(FFBrightnessOptions* options)
                 if(str.length > 0)
                     ffStrbufAppendC(&str, ' ');
 
-                ffAppendPercentNum(&str, percent, 10, 10, str.length > 0);
+                ffPercentAppendNum(&str, percent, options->percent, str.length > 0);
             }
 
             ffStrbufPutTo(&str, stdout);
@@ -68,14 +68,14 @@ void ffPrintBrightness(FFBrightnessOptions* options)
         else
         {
             FF_STRBUF_AUTO_DESTROY valueStr = ffStrbufCreate();
-            ffAppendPercentNum(&valueStr, percent, 10, 10, false);
-            ffPrintFormatString(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY, FF_BRIGHTNESS_NUM_FORMAT_ARGS, (FFformatarg[]) {
+            ffPercentAppendNum(&valueStr, percent, options->percent, false);
+            FF_PRINT_FORMAT_CHECKED(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY, FF_BRIGHTNESS_NUM_FORMAT_ARGS, ((FFformatarg[]) {
                 {FF_FORMAT_ARG_TYPE_STRBUF, &valueStr},
                 {FF_FORMAT_ARG_TYPE_STRBUF, &item->name},
                 {FF_FORMAT_ARG_TYPE_DOUBLE, &item->max},
                 {FF_FORMAT_ARG_TYPE_DOUBLE, &item->min},
                 {FF_FORMAT_ARG_TYPE_DOUBLE, &item->current},
-            });
+            }));
         }
 
         ffStrbufClear(&key);
@@ -96,6 +96,9 @@ bool ffParseBrightnessCommandOptions(FFBrightnessOptions* options, const char* k
         options->ddcciSleep = ffOptionParseUInt32(key, value);
         return true;
     }
+
+    if (ffPercentParseCommandOptions(key, subKey, value, &options->percent))
+        return true;
 
     return false;
 }
@@ -119,7 +122,10 @@ void ffParseBrightnessJsonObject(FFBrightnessOptions* options, yyjson_val* modul
             continue;
         }
 
-        ffPrintError(FF_BRIGHTNESS_MODULE_NAME, 0, &options->moduleArgs, "Unknown JSON key %s", key);
+        if (ffPercentParseJsonObject(key, val, &options->percent))
+            continue;
+
+        ffPrintError(FF_BRIGHTNESS_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "Unknown JSON key %s", key);
     }
 }
 
@@ -132,6 +138,8 @@ void ffGenerateBrightnessJsonConfig(FFBrightnessOptions* options, yyjson_mut_doc
 
     if (defaultOptions.ddcciSleep != options->ddcciSleep)
         yyjson_mut_obj_add_uint(doc, module, "ddcciSleep", options->ddcciSleep);
+
+    ffPercentGenerateJsonConfig(doc, module, defaultOptions.percent, options->percent);
 }
 
 void ffGenerateBrightnessJsonResult(FF_MAYBE_UNUSED FFBrightnessOptions* options, yyjson_mut_doc* doc, yyjson_mut_val* module)
@@ -172,13 +180,13 @@ void ffGenerateBrightnessJsonResult(FF_MAYBE_UNUSED FFBrightnessOptions* options
 
 void ffPrintBrightnessHelpFormat(void)
 {
-    ffPrintModuleFormatHelp(FF_BRIGHTNESS_MODULE_NAME, "{1}", FF_BRIGHTNESS_NUM_FORMAT_ARGS, (const char* []) {
+    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_BRIGHTNESS_MODULE_NAME, "{1}", FF_BRIGHTNESS_NUM_FORMAT_ARGS, ((const char* []) {
         "Screen brightness (percentage)",
         "Screen name",
         "Maximum brightness value",
         "Minimum brightness value",
         "Current brightness value",
-    });
+    }));
 }
 
 void ffInitBrightnessOptions(FFBrightnessOptions* options)
@@ -197,6 +205,7 @@ void ffInitBrightnessOptions(FFBrightnessOptions* options)
     ffOptionInitModuleArg(&options->moduleArgs);
 
     options->ddcciSleep = 10;
+    options->percent = (FFColorRangeConfig) { 100, 100 };
 }
 
 void ffDestroyBrightnessOptions(FFBrightnessOptions* options)

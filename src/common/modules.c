@@ -15,6 +15,7 @@ static FFModuleBaseInfo* B[] = {
 };
 
 static FFModuleBaseInfo* C[] = {
+    (void*) &instance.config.modules.camera,
     (void*) &instance.config.modules.chassis,
     (void*) &instance.config.modules.command,
     (void*) &instance.config.modules.colors,
@@ -124,6 +125,7 @@ static FFModuleBaseInfo* T[] = {
     (void*) &instance.config.modules.terminal,
     (void*) &instance.config.modules.terminalFont,
     (void*) &instance.config.modules.terminalSize,
+    (void*) &instance.config.modules.terminalTheme,
     (void*) &instance.config.modules.title,
     (void*) &instance.config.modules.theme,
     NULL,

@@ -41,11 +41,10 @@ static inline void ffStrbufAppend(FFstrbuf* __restrict strbuf, const FFstrbuf* _
 void ffStrbufAppendC(FFstrbuf* strbuf, char c);
 void ffStrbufAppendNC(FFstrbuf* strbuf, uint32_t num, char c);
 void ffStrbufAppendNS(FFstrbuf* strbuf, uint32_t length, const char* value);
-void ffStrbufAppendNSExludingC(FFstrbuf* strbuf, uint32_t length, const char* value, char exclude);
 void ffStrbufAppendTransformS(FFstrbuf* strbuf, const char* value, int(*transformFunc)(int));
 FF_C_PRINTF(2, 3) void ffStrbufAppendF(FFstrbuf* strbuf, const char* format, ...);
 void ffStrbufAppendVF(FFstrbuf* strbuf, const char* format, va_list arguments);
-void ffStrbufAppendSUntilC(FFstrbuf* strbuf, const char* value, char until);
+const char* ffStrbufAppendSUntilC(FFstrbuf* strbuf, const char* value, char until);
 
 void ffStrbufPrependNS(FFstrbuf* strbuf, uint32_t length, const char* value);
 
@@ -55,6 +54,7 @@ FF_C_PRINTF(2, 3) void ffStrbufSetF(FFstrbuf* strbuf, const char* format, ...);
 
 void ffStrbufTrimLeft(FFstrbuf* strbuf, char c);
 void ffStrbufTrimRight(FFstrbuf* strbuf, char c);
+void ffStrbufTrimRightSpace(FFstrbuf* strbuf);
 
 void ffStrbufRemoveSubstr(FFstrbuf* strbuf, uint32_t startIndex, uint32_t endIndex);
 void ffStrbufRemoveS(FFstrbuf* strbuf, const char* str);
@@ -83,6 +83,7 @@ void ffStrbufWriteTo(const FFstrbuf* strbuf, FILE* file);
 void ffStrbufPutTo(const FFstrbuf* strbuf, FILE* file);
 
 FF_C_NODISCARD double ffStrbufToDouble(const FFstrbuf* strbuf);
+FF_C_NODISCARD int64_t ffStrbufToSInt(const FFstrbuf* strbuf, int64_t defaultValue);
 FF_C_NODISCARD uint64_t ffStrbufToUInt(const FFstrbuf* strbuf, uint64_t defaultValue);
 
 void ffStrbufUpperCase(FFstrbuf* strbuf);
@@ -222,6 +223,8 @@ FF_C_NODISCARD static inline FFstrbuf ffStrbufCreate()
 static inline void ffStrbufInitStatic(FFstrbuf* strbuf, const char* str)
 {
     ffStrbufInit(strbuf);
+    if (!str) return;
+
     strbuf->allocated = 0;
     strbuf->length = (uint32_t) strlen(str);
     strbuf->chars = (char*) str;
@@ -295,11 +298,6 @@ static inline int ffStrbufComp(const FFstrbuf* strbuf, const FFstrbuf* comp)
 {
     uint32_t length = strbuf->length > comp->length ? comp->length : strbuf->length;
     return memcmp(strbuf->chars, comp->chars, length + 1);
-}
-
-static inline int ffStrbufCompAlphabetically(const FFstrbuf* strbuf, const FFstrbuf* comp)
-{
-    return strcmp(strbuf->chars, comp->chars);
 }
 
 static inline FF_C_NODISCARD bool ffStrbufEqual(const FFstrbuf* strbuf, const FFstrbuf* comp)
@@ -452,6 +450,12 @@ static inline FF_C_NODISCARD bool ffStrbufEndsWithNS(const FFstrbuf* strbuf, uin
 static inline FF_C_NODISCARD bool ffStrbufEndsWithS(const FFstrbuf* strbuf, const char* end)
 {
     return ffStrbufEndsWithNS(strbuf, (uint32_t) strlen(end), end);
+}
+
+static inline FF_C_NODISCARD bool ffStrbufEndsWithFn(const FFstrbuf* strbuf, int (*fn)(int))
+{
+    return strbuf->length == 0 ? false :
+        fn(strbuf->chars[strbuf->length - 1]);
 }
 
 static inline FF_C_NODISCARD bool ffStrbufEndsWith(const FFstrbuf* strbuf, const FFstrbuf* end)

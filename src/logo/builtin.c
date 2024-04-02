@@ -413,7 +413,7 @@ static const FFlogo A[] = {
         .lines = FASTFETCH_DATATEXT_LOGO_ARCO,
         .colors = {
             FF_COLOR_FG_BLUE,
-            FF_COLOR_FG_GREEN,
+            FF_COLOR_FG_WHITE,
         },
         .colorKeys = FF_COLOR_FG_BLUE,
         .colorTitle = FF_COLOR_FG_BLUE,
@@ -425,7 +425,7 @@ static const FFlogo A[] = {
         .lines = FASTFETCH_DATATEXT_LOGO_ARCO_SMALL,
         .colors = {
             FF_COLOR_FG_BLUE,
-            FF_COLOR_FG_GREEN,
+            FF_COLOR_FG_WHITE,
         },
         .colorKeys = FF_COLOR_FG_BLUE,
         .colorTitle = FF_COLOR_FG_BLUE,
@@ -464,6 +464,23 @@ static const FFlogo A[] = {
             FF_COLOR_FG_WHITE,
             FF_COLOR_FG_CYAN,
             FF_COLOR_FG_BLUE,
+        },
+        .colorKeys = FF_COLOR_FG_YELLOW,
+        .colorTitle = FF_COLOR_FG_GREEN,
+    },
+    // Asahi2
+    {
+        .names = {"asahi2", "asahi-linux2"},
+        .lines = FASTFETCH_DATATEXT_LOGO_ASAHI2,
+        .type = FF_LOGO_LINE_TYPE_ALTER_BIT,
+        .colors = {
+            FF_COLOR_FG_LIGHT_YELLOW,
+            FF_COLOR_FG_CYAN,
+            FF_COLOR_FG_RED,
+            FF_COLOR_FG_LIGHT_RED,
+            FF_COLOR_FG_WHITE,
+            FF_COLOR_FG_BLACK,
+            FF_COLOR_FG_LIGHT_CYAN,
         },
         .colorKeys = FF_COLOR_FG_YELLOW,
         .colorTitle = FF_COLOR_FG_GREEN,
@@ -974,7 +991,7 @@ static const FFlogo C[] = {
     // ContainerLinux
     {
         .names = {"ContainerLinux", "Container Linux", "Container Linux by CoreOS"},
-        .lines = FASTFETCH_DATATEXT_LOGO_CONTAINER_LINUX,
+        .lines = FASTFETCH_DATATEXT_LOGO_FEDORA_COREOS,
         .colors = {
             FF_COLOR_FG_BLUE,
             FF_COLOR_FG_WHITE,
@@ -1445,6 +1462,22 @@ static const FFlogo F[] = {
         .colorKeys = FF_COLOR_FG_BLUE,
         .colorTitle = FF_COLOR_FG_BLUE,
     },
+    // FedoraAsahiRemix
+    {
+        .names = {"fedora-asahi-remix"},
+        .lines = FASTFETCH_DATATEXT_LOGO_ASAHI,
+        .colors = {
+            FF_COLOR_FG_YELLOW,
+            FF_COLOR_FG_GREEN,
+            FF_COLOR_FG_RED,
+            "38", //cyan
+            FF_COLOR_FG_WHITE,
+            FF_COLOR_FG_CYAN,
+            FF_COLOR_FG_BLUE,
+        },
+        .colorKeys = FF_COLOR_FG_YELLOW,
+        .colorTitle = FF_COLOR_FG_GREEN,
+    },
     // FedoraSmall
     {
         .names = {"Fedora_small", "fedora-linux-small"},
@@ -1467,6 +1500,68 @@ static const FFlogo F[] = {
         },
         .colorKeys = FF_COLOR_FG_BLUE,
         .colorTitle = FF_COLOR_FG_BLUE,
+    },
+    // FedoraSilverblue
+    {
+        .names = {"Fedora_silverblue", "fedora-silverblue", "fedora-linux-silverblue", "fedora-linux_silverblue"},
+        .type = FF_LOGO_LINE_TYPE_ALTER_BIT,
+        .lines = FASTFETCH_DATATEXT_LOGO_FEDORA_SILVERBLUE,
+        .colors = {
+            FF_COLOR_FG_BLUE,
+            FF_COLOR_FG_WHITE,
+            FF_COLOR_FG_CYAN,
+        },
+        .colorKeys = FF_COLOR_FG_BLUE,
+        .colorTitle = FF_COLOR_FG_BLUE,
+    },
+    // FedoraKinoite
+    {
+        .names = {"Fedora_kinoite", "fedora-kinoite", "fedora-linux-kinoite", "fedora-linux_kinoite"},
+        .type = FF_LOGO_LINE_TYPE_ALTER_BIT,
+        .lines = FASTFETCH_DATATEXT_LOGO_FEDORA_KINOITE,
+        .colors = {
+            FF_COLOR_FG_BLUE,
+            FF_COLOR_FG_WHITE,
+        },
+        .colorKeys = FF_COLOR_FG_BLUE,
+        .colorTitle = FF_COLOR_FG_BLUE,
+    },
+    // FedoraSericea
+    {
+        .names = {"Fedora_sericea", "fedora-sericea", "fedora-linux-sericea", "fedora-linux_sericea"},
+        .type = FF_LOGO_LINE_TYPE_ALTER_BIT,
+        .lines = FASTFETCH_DATATEXT_LOGO_FEDORA_SERICEA,
+        .colors = {
+            FF_COLOR_FG_BLUE,
+            FF_COLOR_FG_WHITE,
+        },
+        .colorKeys = FF_COLOR_FG_BLUE,
+        .colorTitle = FF_COLOR_FG_BLUE,
+    },
+    // FedoraOnyx placeholder - Currently does not have a logo
+    //{
+        //.names = {"Fedora_onyx", "fedora-onyx", "fedora-linux-onyx", "fedora-linux_onyx"},
+        //.type = FF_LOGO_LINE_TYPE_ALTER_BIT,
+        //.lines = FASTFETCH_DATATEXT_LOGO_FEDORA_ONYX,
+        //.colors = {
+            //FF_COLOR_FG_BLUE,
+            //FF_COLOR_FG_WHITE,
+        //},
+        //.colorKeys = FF_COLOR_FG_BLUE,
+        //.colorTitle = FF_COLOR_FG_BLUE,
+    //},
+    // FedoraCoreOS
+    {
+        .names = {"Fedora_coreos", "fedora-coreos", "fedora-linux-coreos", "fedora-linux_coreos"},
+        .type = FF_LOGO_LINE_TYPE_ALTER_BIT,
+        .lines = FASTFETCH_DATATEXT_LOGO_FEDORA_COREOS,
+        .colors = {
+            FF_COLOR_FG_BLUE,
+            FF_COLOR_FG_WHITE,
+            FF_COLOR_FG_RED,
+        },
+        .colorKeys = FF_COLOR_FG_BLUE,
+        .colorTitle = FF_COLOR_FG_WHITE,
     },
     // FemboyOS
     {
@@ -3127,6 +3222,14 @@ static const FFlogo P[] = {
             FF_COLOR_FG_WHITE,
         },
     },
+    // PikaOS
+    {
+        .names = {"PikaOS"},
+        .lines = FASTFETCH_DATATEXT_LOGO_PIKAOS,
+        .colors = {
+            FF_COLOR_FG_YELLOW,
+        },
+    },
     // Pisi
     {
         .names = {"Pisi"},
@@ -3195,6 +3298,17 @@ static const FFlogo P[] = {
             FF_COLOR_FG_GREEN,
             FF_COLOR_FG_WHITE,
         },
+    },
+    // Proxmox
+    {
+        .names = {"proxmox"},
+        .lines = FASTFETCH_DATATEXT_LOGO_PROXMOX,
+        .colors = {
+            FF_COLOR_FG_WHITE,
+            FF_COLOR_FG_256 "202"
+        },
+        .colorKeys = FF_COLOR_FG_WHITE,
+        .colorTitle = FF_COLOR_FG_256 "202",
     },
     // PuffOS
     {
@@ -3454,17 +3568,6 @@ static const FFlogo R[] = {
         },
         .colorKeys = FF_COLOR_FG_BLUE,
         .colorTitle = FF_COLOR_FG_BLUE,
-    },
-    // Proxmox
-    {
-        .names = {"proxmox"},
-        .lines = FASTFETCH_DATATEXT_LOGO_PROXMOX,
-        .colors = {
-            FF_COLOR_FG_WHITE,
-            FF_COLOR_FG_256 "202"
-        },
-        .colorKeys = FF_COLOR_FG_WHITE,
-        .colorTitle = FF_COLOR_FG_256 "202",
     },
     // LAST
     {},
@@ -3818,6 +3921,15 @@ static const FFlogo T[] = {
         .colors = {
             FF_COLOR_FG_BLUE,
             FF_COLOR_FG_WHITE,
+        },
+    },
+    // Tatra
+    {
+        .names = {"Tatra"},
+        .lines = FASTFETCH_DATATEXT_LOGO_TATRA,
+        .colors = {
+            FF_COLOR_FG_BLUE,
+            FF_COLOR_FG_GREEN,
         },
     },
     // TeArch
@@ -4326,6 +4438,14 @@ static const FFlogo Z[] = {
         },
         .colorKeys = FF_COLOR_FG_BLUE,
         .colorTitle = FF_COLOR_FG_BLUE,
+    },
+    // Z/OS
+    {
+        .names = {"z/OS", "zos"},
+        .lines = FASTFETCH_DATATEXT_LOGO_ZOS,
+        .colors = {
+            FF_COLOR_FG_BLUE,
+        },
     },
     // LAST
     {},

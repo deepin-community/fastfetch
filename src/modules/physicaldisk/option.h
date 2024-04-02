@@ -10,4 +10,6 @@ typedef struct FFPhysicalDiskOptions
     FFModuleArgs moduleArgs;
 
     FFstrbuf namePrefix;
+    bool temp;
+    FFColorRangeConfig tempConfig;
 } FFPhysicalDiskOptions;

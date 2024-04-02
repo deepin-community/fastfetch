@@ -1,3 +1,19 @@
+fastfetch (2.8.10-0deepin) unstable; urgency=medium
+
+  * New upstream version
+  * Improve stability; print more useful error message; avoid misuse (PublicIP / Weather)
+  * Use MS-DOS device name as mountFrom result, instead of useless GUID volume name (Disk, Windows)
+  * Fix color of Arco Linux
+  * Support new MacBook Air (Host, macOS)
+  * Distinguish min frequency and base frequency (CPU)
+  * Support zellij version detection (Linux, Terminal)
+  * Config presets in app folder now work with symlinks
+  * Add new module TerminalTheme, which prints the foreground and background color of the current terminal window. Currently doesn't work on Windows.
+  * Improve xonsh shell detection (Shell)
+  * Support colored percentage values (Bluetooth / Gamepad / Sound)
+
+ -- zhangkun <zhangkun2@uniontech.com>  Tue, 02 Apr 2024 21:14:53 +0800
+
 fastfetch (2.4.0-0deepin) unstable; urgency=medium
 
   * New upstream version

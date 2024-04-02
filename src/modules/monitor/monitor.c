@@ -6,7 +6,7 @@
 
 #include <math.h>
 
-#define FF_MONITOR_NUM_FORMAT_ARGS 7
+#define FF_MONITOR_NUM_FORMAT_ARGS 10
 
 void ffPrintMonitor(FFMonitorOptions* options)
 {
@@ -16,13 +16,13 @@ void ffPrintMonitor(FFMonitorOptions* options)
 
     if(error)
     {
-        ffPrintError(FF_MONITOR_MODULE_NAME, 0, &options->moduleArgs, "%s", error);
+        ffPrintError(FF_MONITOR_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "%s", error);
         return;
     }
 
     if(!result.length)
     {
-        ffPrintError(FF_MONITOR_MODULE_NAME, 0, &options->moduleArgs, "No physical display detected");
+        ffPrintError(FF_MONITOR_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "No physical display detected");
         return;
     }
 
@@ -41,10 +41,10 @@ void ffPrintMonitor(FFMonitorOptions* options)
         else
         {
             uint32_t moduleIndex = result.length == 1 ? 0 : index + 1;
-            ffParseFormatString(&key, &options->moduleArgs.key, 2, (FFformatarg[]){
+            FF_PARSE_FORMAT_STRING_CHECKED(&key, &options->moduleArgs.key, 2, ((FFformatarg[]){
                 {FF_FORMAT_ARG_TYPE_UINT, &moduleIndex},
                 {FF_FORMAT_ARG_TYPE_STRBUF, &display->name},
-            });
+            }));
         }
 
         if(options->moduleArgs.outputFormat.length == 0)
@@ -59,7 +59,16 @@ void ffPrintMonitor(FFMonitorOptions* options)
         }
         else
         {
-            ffPrintFormatString(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY, FF_MONITOR_NUM_FORMAT_ARGS, (FFformatarg[]) {
+            char buf[32];
+            if (display->serial)
+            {
+                const uint8_t* nums = (uint8_t*) &display->serial;
+                snprintf(buf, sizeof(buf), "%2X-%2X-%2X-%2X", nums[0], nums[1], nums[2], nums[3]);
+            }
+            else
+                buf[0] = '\0';
+
+            FF_PRINT_FORMAT_CHECKED(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY, FF_MONITOR_NUM_FORMAT_ARGS, ((FFformatarg[]) {
                 {FF_FORMAT_ARG_TYPE_STRBUF, &display->name},
                 {FF_FORMAT_ARG_TYPE_UINT, &display->width},
                 {FF_FORMAT_ARG_TYPE_UINT, &display->height},
@@ -67,7 +76,10 @@ void ffPrintMonitor(FFMonitorOptions* options)
                 {FF_FORMAT_ARG_TYPE_UINT, &display->physicalHeight},
                 {FF_FORMAT_ARG_TYPE_DOUBLE, &inch},
                 {FF_FORMAT_ARG_TYPE_DOUBLE, &ppi},
-            });
+                {FF_FORMAT_ARG_TYPE_UINT16, &display->manufactureYear},
+                {FF_FORMAT_ARG_TYPE_UINT16, &display->manufactureWeek},
+                {FF_FORMAT_ARG_TYPE_STRING, buf},
+            }));
         }
 
         ffStrbufDestroy(&display->name);
@@ -98,7 +110,7 @@ void ffParseMonitorJsonObject(FFMonitorOptions* options, yyjson_val* module)
         if (ffJsonConfigParseModuleArgs(key, val, &options->moduleArgs))
             continue;
 
-        ffPrintError(FF_MONITOR_MODULE_NAME, 0, &options->moduleArgs, "Unknown JSON key %s", key);
+        ffPrintError(FF_MONITOR_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "Unknown JSON key %s", key);
     }
 }
 
@@ -131,11 +143,31 @@ void ffGenerateMonitorJsonResult(FF_MAYBE_UNUSED FFMonitorOptions* options, yyjs
         {
             yyjson_mut_val* obj = yyjson_mut_arr_add_obj(doc, arr);
             yyjson_mut_obj_add_bool(doc, obj, "hdrCompatible", item->hdrCompatible);
-            yyjson_mut_obj_add_uint(doc, obj, "width", item->width);
-            yyjson_mut_obj_add_uint(doc, obj, "height", item->height);
             yyjson_mut_obj_add_strbuf(doc, obj, "name", &item->name);
-            yyjson_mut_obj_add_uint(doc, obj, "physicalHeight", item->physicalHeight);
-            yyjson_mut_obj_add_uint(doc, obj, "physicalWidth", item->physicalWidth);
+
+            yyjson_mut_val* resolution = yyjson_mut_obj_add_obj(doc, obj, "resolution");
+            yyjson_mut_obj_add_uint(doc, resolution, "width", item->width);
+            yyjson_mut_obj_add_uint(doc, resolution, "height", item->height);
+
+            yyjson_mut_val* physical = yyjson_mut_obj_add_obj(doc, obj, "physical");
+            yyjson_mut_obj_add_uint(doc, physical, "height", item->physicalHeight);
+            yyjson_mut_obj_add_uint(doc, physical, "width", item->physicalWidth);
+
+            if (item->manufactureYear)
+            {
+                yyjson_mut_val* manufactureDate = yyjson_mut_obj_add_obj(doc, obj, "manufactureDate");
+                yyjson_mut_obj_add_uint(doc, manufactureDate, "year", item->manufactureYear);
+                yyjson_mut_obj_add_uint(doc, manufactureDate, "week", item->manufactureWeek);
+            }
+            else
+            {
+                yyjson_mut_obj_add_null(doc, obj, "manufactureDate");
+            }
+
+            if (item->serial)
+                yyjson_mut_obj_add_uint(doc, obj, "serial", item->serial);
+            else
+                yyjson_mut_obj_add_null(doc, obj, "serial");
         }
     }
 
@@ -147,15 +179,18 @@ void ffGenerateMonitorJsonResult(FF_MAYBE_UNUSED FFMonitorOptions* options, yyjs
 
 void ffPrintMonitorHelpFormat(void)
 {
-    ffPrintModuleFormatHelp(FF_MONITOR_MODULE_NAME, "{2}x{3} px - {4}x{5} mm ({6} inches, {7} ppi)", FF_MONITOR_NUM_FORMAT_ARGS, (const char* []) {
+    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_MONITOR_MODULE_NAME, "{2}x{3} px - {4}x{5} mm ({6} inches, {7} ppi)", FF_MONITOR_NUM_FORMAT_ARGS, ((const char* []) {
         "Display name",
-        "Display native resolution width in pixels",
-        "Display native resolution height in pixels",
-        "Display physical width in millimeters",
-        "Display physical height in millimeters",
-        "Display physical diagonal length in inches",
-        "Display physical pixels per inch (PPI)"
-    });
+        "Native resolution width in pixels",
+        "Native resolution height in pixels",
+        "Physical width in millimeters",
+        "Physical height in millimeters",
+        "Physical diagonal length in inches",
+        "Pixels per inch (PPI)",
+        "Year of manufacturing",
+        "Nth week of manufacturing in the year",
+        "Serial number",
+    }));
 }
 
 void ffInitMonitorOptions(FFMonitorOptions* options)

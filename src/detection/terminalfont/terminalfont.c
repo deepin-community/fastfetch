@@ -1,7 +1,6 @@
 #include "terminalfont.h"
 #include "common/properties.h"
 #include "common/processing.h"
-#include "detection/internal.h"
 #include "detection/terminalshell/terminalshell.h"
 
 static void detectAlacritty(FFTerminalFontResult* terminalFont)
@@ -171,7 +170,17 @@ static void detectFromWindowsTeriminal(const FFstrbuf* terminalExe, FFTerminalFo
     if(terminalExe && terminalExe->length > 0 && !ffStrbufEqualS(terminalExe, "Windows Terminal"))
     {
         char jsonPath[MAX_PATH + 1];
-        if(SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, jsonPath)))
+        strncpy(jsonPath, terminalExe->chars, ffStrbufLastIndexC(terminalExe, '\\') + 1);
+        char* pathEnd = jsonPath + strlen(jsonPath);
+        strncpy(pathEnd, ".portable", sizeof(jsonPath) - (size_t) (pathEnd - jsonPath) - 1);
+
+        if(ffPathExists(jsonPath, FF_PATHTYPE_FILE))
+        {
+            strncpy(pathEnd, "settings\\settings.json", sizeof(jsonPath) - (size_t) (pathEnd - jsonPath) - 1);
+            if(!ffAppendFileBuffer(jsonPath, &json))
+                error = "Error reading Windows Terminal portable settings JSON file";
+        }
+        else if(SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, jsonPath)))
         {
             size_t remaining = sizeof(jsonPath) - strlen(jsonPath) - 1;
             if(ffStrbufContainIgnCaseS(terminalExe, "_8wekyb3d8bbwe\\"))
@@ -395,35 +404,35 @@ static bool detectContour(const FFstrbuf* exe, FFTerminalFontResult* result)
     return true;
 }
 
-void ffDetectTerminalFontPlatform(const FFTerminalShellResult* terminalShell, FFTerminalFontResult* terminalFont);
+void ffDetectTerminalFontPlatform(const FFTerminalResult* terminal, FFTerminalFontResult* terminalFont);
 
-static bool detectTerminalFontCommon(const FFTerminalShellResult* terminalShell, FFTerminalFontResult* terminalFont)
+static bool detectTerminalFontCommon(const FFTerminalResult* terminal, FFTerminalFontResult* terminalFont)
 {
-    if(ffStrbufStartsWithIgnCaseS(&terminalShell->terminalProcessName, "alacritty"))
+    if(ffStrbufStartsWithIgnCaseS(&terminal->processName, "alacritty"))
         detectAlacritty(terminalFont);
-    else if(ffStrbufStartsWithIgnCaseS(&terminalShell->terminalProcessName, "terminator"))
+    else if(ffStrbufStartsWithIgnCaseS(&terminal->processName, "terminator"))
         detectTerminator(terminalFont);
-    else if(ffStrbufStartsWithIgnCaseS(&terminalShell->terminalProcessName, "wezterm-gui"))
+    else if(ffStrbufStartsWithIgnCaseS(&terminal->processName, "wezterm-gui"))
         detectWezterm(terminalFont);
-    else if(ffStrbufStartsWithIgnCaseS(&terminalShell->terminalProcessName, "tabby"))
+    else if(ffStrbufStartsWithIgnCaseS(&terminal->processName, "tabby"))
         detectTabby(terminalFont);
-    else if(ffStrbufStartsWithIgnCaseS(&terminalShell->terminalProcessName, "contour"))
-        detectContour(&terminalShell->terminalExe, terminalFont);
+    else if(ffStrbufStartsWithIgnCaseS(&terminal->processName, "contour"))
+        detectContour(&terminal->exe, terminalFont);
 
     #ifndef _WIN32
-    else if(ffStrbufStartsWithIgnCaseS(&terminalShell->terminalExe, "/dev/pts/"))
+    else if(ffStrbufStartsWithIgnCaseS(&terminal->exe, "/dev/pts/"))
         ffStrbufAppendS(&terminalFont->error, "Terminal font detection is not supported on PTS");
-    else if(ffStrbufIgnCaseEqualS(&terminalShell->terminalProcessName, "kitty"))
-        detectKitty(&terminalShell->terminalExe, terminalFont);
-    else if(ffStrbufStartsWithIgnCaseS(&terminalShell->terminalExe, "/dev/tty"))
+    else if(ffStrbufIgnCaseEqualS(&terminal->processName, "kitty"))
+        detectKitty(&terminal->exe, terminalFont);
+    else if(ffStrbufStartsWithIgnCaseS(&terminal->exe, "/dev/tty"))
         detectTTY(terminalFont);
     #endif
 
     #if defined(_WIN32) || defined(__linux__)
     //Used by both Linux (WSL) and Windows
-    else if(ffStrbufIgnCaseEqualS(&terminalShell->terminalProcessName, "Windows Terminal") ||
-        ffStrbufIgnCaseEqualS(&terminalShell->terminalProcessName, "WindowsTerminal.exe"))
-        detectFromWindowsTeriminal(&terminalShell->terminalExe, terminalFont);
+    else if(ffStrbufIgnCaseEqualS(&terminal->processName, "Windows Terminal") ||
+        ffStrbufIgnCaseEqualS(&terminal->processName, "WindowsTerminal.exe"))
+        detectFromWindowsTeriminal(&terminal->exe, terminalFont);
     #endif
 
     else
@@ -434,16 +443,16 @@ static bool detectTerminalFontCommon(const FFTerminalShellResult* terminalShell,
 
 bool ffDetectTerminalFont(FFTerminalFontResult* result)
 {
-    const FFTerminalShellResult* terminalShell = ffDetectTerminalShell();
+    const FFTerminalResult* terminal = ffDetectTerminal();
 
-    if(terminalShell->terminalProcessName.length == 0)
+    if(terminal->processName.length == 0)
         ffStrbufAppendS(&result->error, "Terminal font needs successful terminal detection");
 
-    else if(!detectTerminalFontCommon(terminalShell, result))
-        ffDetectTerminalFontPlatform(terminalShell, result);
+    else if(!detectTerminalFontCommon(terminal, result))
+        ffDetectTerminalFontPlatform(terminal, result);
 
     if(result->error.length == 0 && result->font.pretty.length == 0)
-        ffStrbufAppendF(&result->error, "Unknown terminal: %s", terminalShell->terminalProcessName.chars);
+        ffStrbufAppendF(&result->error, "Unknown terminal: %s", terminal->processName.chars);
 
     return result->error.length == 0;
 }
