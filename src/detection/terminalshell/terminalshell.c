@@ -152,6 +152,39 @@ static bool getShellVersionNushell(FFstrbuf* exe, FFstrbuf* version)
     return getExeVersionRaw(exe, version); //0.73.0
 }
 
+static bool getShellVersionAsh(FFstrbuf* exe, FFstrbuf* version)
+{
+    if(ffProcessAppendStdErr(version, (char* const[]) {
+        exe->chars,
+        "--help",
+        NULL
+    }) != NULL)
+        return false;
+
+    // BusyBox v1.36.1 (2023-11-07 18:53:09 UTC) multi-call binary...
+    ffStrbufSubstrAfterFirstC(version, ' ');
+    ffStrbufSubstrBeforeFirstC(version, ' ');
+    ffStrbufTrimLeft(version, 'v');
+    return true;
+}
+
+static bool getShellVersionXonsh(FFstrbuf* exe, FFstrbuf* version)
+{
+    ffStrbufSetS(version, getenv("XONSH_VERSION"));
+    if (version->length) return true;
+
+    if(ffProcessAppendStdErr(version, (char* const[]) {
+        exe->chars,
+        "--version",
+        NULL
+    }) != NULL)
+        return false;
+
+    // xonsh/0.14.1
+    ffStrbufSubstrAfterFirstC(version, '/');
+    return true;
+}
+
 #ifdef _WIN32
 static bool getShellVersionWinPowerShell(FFstrbuf* exe, FFstrbuf* version)
 {
@@ -210,11 +243,10 @@ bool fftsGetShellVersion(FFstrbuf* exe, const char* exeName, FFstrbuf* version)
         return getShellVersionOils(exe, version);
     if(strcasecmp(exeName, "elvish") == 0)
         return getExeVersionRaw(exe, version);
-    if(strcasecmp(exeName, "python") == 0 && getenv("XONSH_VERSION"))
-    {
-        ffStrbufSetS(version, getenv("XONSH_VERSION"));
-        return true;
-    }
+    if(strcasecmp(exeName, "ash") == 0)
+        return getShellVersionAsh(exe, version);
+    if(strcasecmp(exeName, "xonsh") == 0)
+        return getShellVersionXonsh(exe, version);
 
     #ifdef _WIN32
     if(strcasecmp(exeName, "powershell") == 0 || strcasecmp(exeName, "powershell_ise") == 0)
@@ -249,7 +281,7 @@ FF_MAYBE_UNUSED static bool getTerminalVersionGnome(FFstrbuf* version)
 FF_MAYBE_UNUSED static bool getTerminalVersionKgx(FFstrbuf* version)
 {
     if(ffProcessAppendStdOut(version, (char* const[]){
-        "gnome-terminal",
+        "kgx",
         "--version",
         NULL
     })) return false;
@@ -324,6 +356,20 @@ FF_MAYBE_UNUSED static bool getTerminalVersionXterm(FFstrbuf* exe, FFstrbuf* ver
     return version->length > 0;
 }
 
+FF_MAYBE_UNUSED static bool getTerminalVersionBlackbox(FFstrbuf* exe, FFstrbuf* version)
+{
+    if(ffProcessAppendStdOut(version, (char* const[]){
+        exe->chars,
+        "--version",
+        NULL
+    })) return false;
+
+    //BlackBox version 0.14.0 (flatpak)
+    ffStrbufSubstrAfterFirstS(version, "version ");
+    ffStrbufSubstrBeforeFirstC(version, ' ');
+    return version->length > 0;
+}
+
 FF_MAYBE_UNUSED static bool getTerminalVersionUrxvt(FF_MAYBE_UNUSED FFstrbuf* exe, FFstrbuf* version)
 {
     if(ffProcessAppendStdErr(version, (char* const[]){
@@ -368,6 +414,38 @@ static bool getTerminalVersionContour(FFstrbuf* exe, FFstrbuf* version)
     return version->length > 0;
 }
 
+static bool getTerminalVersionScreen(FFstrbuf* exe, FFstrbuf* version)
+{
+    if(!getExeVersionRaw(exe, version)) return false;
+    // Screen version 4.09.01 (GNU) 20-Aug-23
+    ffStrbufSubstrAfter(version, strlen("Screen version ") - 1);
+    ffStrbufSubstrBeforeFirstC(version, ' ');
+    return version->length > 0;
+}
+
+static bool getTerminalVersionTmux(FFstrbuf* exe, FFstrbuf* version)
+{
+    if (ffProcessAppendStdOut(version, (char* const[]) {
+        exe->chars,
+        "-V",
+        NULL
+    }) != NULL)
+        return false;
+
+    // tmux 3.4
+    ffStrbufSubstrAfterFirstC(version, ' ');
+    return version->length > 0;
+}
+
+static bool getTerminalVersionZellij(FFstrbuf* exe, FFstrbuf* version)
+{
+    if(!getExeVersionRaw(exe, version)) return false;
+
+    // zellij 0.39.2
+    ffStrbufSubstrAfterFirstC(version, ' ');
+    return version->length > 0;
+}
+
 #ifdef _WIN32
 
 static bool getTerminalVersionWindowsTerminal(FFstrbuf* exe, FFstrbuf* version)
@@ -408,7 +486,7 @@ bool fftsGetTerminalVersion(FFstrbuf* processName, FF_MAYBE_UNUSED FFstrbuf* exe
 
     #if defined(__linux__) || defined(__FreeBSD__)
 
-    if(ffStrbufStartsWithIgnCaseS(processName, "gnome-terminal-"))
+    if(ffStrbufStartsWithIgnCaseS(processName, "gnome-terminal"))
         return getTerminalVersionGnome(version);
 
     if(ffStrbufIgnCaseEqualS(processName, "konsole"))
@@ -440,6 +518,9 @@ bool fftsGetTerminalVersion(FFstrbuf* processName, FF_MAYBE_UNUSED FFstrbuf* exe
 
     if(ffStrbufIgnCaseEqualS(processName, "xterm"))
         return getTerminalVersionXterm(exe, version);
+
+    if(ffStrbufIgnCaseEqualS(processName, "blackbox"))
+        return getTerminalVersionBlackbox(exe, version);
 
     if(ffStrbufIgnCaseEqualS(processName, "st"))
         return getTerminalVersionSt(exe, version);
@@ -479,6 +560,12 @@ bool fftsGetTerminalVersion(FFstrbuf* processName, FF_MAYBE_UNUSED FFstrbuf* exe
     if(ffStrbufStartsWithIgnCaseS(processName, "contour"))
         return getTerminalVersionContour(exe, version);
 
+    if(ffStrbufStartsWithIgnCaseS(processName, "screen"))
+        return getTerminalVersionScreen(exe, version);
+
+    if(ffStrbufStartsWithIgnCaseS(processName, "zellij"))
+        return getTerminalVersionZellij(exe, version);
+
     const char* termProgramVersion = getenv("TERM_PROGRAM_VERSION");
     if(termProgramVersion)
     {
@@ -487,7 +574,13 @@ bool fftsGetTerminalVersion(FFstrbuf* processName, FF_MAYBE_UNUSED FFstrbuf* exe
         {
             if(ffStrbufStartsWithIgnCaseS(processName, termProgram) || // processName ends with `.exe` on Windows
                 (ffStrEquals(termProgram, "vscode") && ffStrbufStartsWithIgnCaseS(processName, "code")) ||
-                (ffStrEquals(termProgram, "iTerm.app") && ffStrbufStartsWithIgnCaseS(processName, "iTermServer-"))
+
+                #ifdef __APPLE__
+                (ffStrEquals(termProgram, "iTerm.app") && ffStrbufStartsWithIgnCaseS(processName, "iTermServer-")) ||
+                #elif defined(__linux__)
+                (ffStrEquals(termProgram, "WarpTerminal") && ffStrbufEqualS(processName, "warp")) ||
+                #endif
+                false
             ) {
                 ffStrbufSetS(version, termProgramVersion);
                 return true;
@@ -510,6 +603,9 @@ bool fftsGetTerminalVersion(FFstrbuf* processName, FF_MAYBE_UNUSED FFstrbuf* exe
             }
         }
     }
+
+    if(ffStrbufStartsWithIgnCaseS(processName, "tmux"))
+        return getTerminalVersionTmux(exe, version);
 
     #ifdef _WIN32
 

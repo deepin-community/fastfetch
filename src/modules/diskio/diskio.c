@@ -22,11 +22,11 @@ static void formatKey(const FFDiskIOOptions* options, FFDiskIOResult* dev, uint3
     else
     {
         ffStrbufClear(key);
-        ffParseFormatString(key, &options->moduleArgs.key, 2, (FFformatarg[]){
+        FF_PARSE_FORMAT_STRING_CHECKED(key, &options->moduleArgs.key, 3, ((FFformatarg[]){
             {FF_FORMAT_ARG_TYPE_UINT, &index},
             {FF_FORMAT_ARG_TYPE_STRBUF, &dev->name},
             {FF_FORMAT_ARG_TYPE_STRBUF, &dev->devPath},
-        });
+        }));
     }
 }
 
@@ -37,7 +37,7 @@ void ffPrintDiskIO(FFDiskIOOptions* options)
 
     if(error)
     {
-        ffPrintError(FF_DISKIO_DISPLAY_NAME, 0, &options->moduleArgs, "%s", error);
+        ffPrintError(FF_DISKIO_DISPLAY_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "%s", error);
         return;
     }
 
@@ -58,20 +58,23 @@ void ffPrintDiskIO(FFDiskIOOptions* options)
             ffPrintLogoAndKey(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT);
 
             ffParseSize(dev->bytesRead, &buffer);
-            ffStrbufAppendS(&buffer, "/s (R) - ");
+            if (!options->detectTotal) ffStrbufAppendS(&buffer, "/s");
+            ffStrbufAppendS(&buffer, " (R) - ");
+
             ffParseSize(dev->bytesWritten, &buffer);
-            ffStrbufAppendS(&buffer, "/s (W)");
+            if (!options->detectTotal) ffStrbufAppendS(&buffer, "/s");
+            ffStrbufAppendS(&buffer, " (W)");
             ffStrbufPutTo(&buffer, stdout);
         }
         else
         {
             ffStrbufClear(&buffer2);
             ffParseSize(dev->bytesRead, &buffer);
-            ffStrbufAppendS(&buffer, "/s");
+            if (!options->detectTotal) ffStrbufAppendS(&buffer, "/s");
             ffParseSize(dev->bytesWritten, &buffer2);
-            ffStrbufAppendS(&buffer2, "/s");
+            if (!options->detectTotal) ffStrbufAppendS(&buffer, "/s");
 
-            ffPrintFormatString(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY, FF_DISKIO_NUM_FORMAT_ARGS, (FFformatarg[]){
+            FF_PRINT_FORMAT_CHECKED(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY, FF_DISKIO_NUM_FORMAT_ARGS, ((FFformatarg[]){
                 {FF_FORMAT_ARG_TYPE_STRBUF, &buffer},
                 {FF_FORMAT_ARG_TYPE_STRBUF, &buffer2},
                 {FF_FORMAT_ARG_TYPE_STRBUF, &dev->name},
@@ -80,7 +83,7 @@ void ffPrintDiskIO(FFDiskIOOptions* options)
                 {FF_FORMAT_ARG_TYPE_UINT64, &dev->bytesWritten},
                 {FF_FORMAT_ARG_TYPE_UINT64, &dev->readCount},
                 {FF_FORMAT_ARG_TYPE_UINT64, &dev->writeCount},
-            });
+            }));
         }
         ++index;
     }
@@ -102,6 +105,12 @@ bool ffParseDiskIOCommandOptions(FFDiskIOOptions* options, const char* key, cons
     if (ffStrEqualsIgnCase(subKey, "name-prefix"))
     {
         ffOptionParseString(key, value, &options->namePrefix);
+        return true;
+    }
+
+    if (ffStrEqualsIgnCase(subKey, "detect-total"))
+    {
+        options->detectTotal = ffOptionParseBoolean(value);
         return true;
     }
 
@@ -127,7 +136,13 @@ void ffParseDiskIOJsonObject(FFDiskIOOptions* options, yyjson_val* module)
             continue;
         }
 
-        ffPrintError(FF_DISKIO_MODULE_NAME, 0, &options->moduleArgs, "Unknown JSON key %s", key);
+        if (ffStrEqualsIgnCase(key, "detectTotal"))
+        {
+            options->detectTotal = yyjson_get_bool(val);
+            continue;
+        }
+
+        ffPrintError(FF_DISKIO_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "Unknown JSON key %s", key);
     }
 }
 
@@ -140,6 +155,9 @@ void ffGenerateDiskIOJsonConfig(FFDiskIOOptions* options, yyjson_mut_doc* doc, y
 
     if (!ffStrbufEqual(&options->namePrefix, &defaultOptions.namePrefix))
         yyjson_mut_obj_add_strbuf(doc, module, "namePrefix", &options->namePrefix);
+
+    if (defaultOptions.detectTotal != options->detectTotal)
+        yyjson_mut_obj_add_bool(doc, module, "detectTotal", options->detectTotal);
 }
 
 void ffGenerateDiskIOJsonResult(FFDiskIOOptions* options, yyjson_mut_doc* doc, yyjson_mut_val* module)
@@ -174,16 +192,16 @@ void ffGenerateDiskIOJsonResult(FFDiskIOOptions* options, yyjson_mut_doc* doc, y
 
 void ffPrintDiskIOHelpFormat(void)
 {
-    ffPrintModuleFormatHelp(FF_DISKIO_MODULE_NAME, "{1} (R) - {2} (W)", FF_DISKIO_NUM_FORMAT_ARGS, (const char* []) {
-        "Size of data read per second (formatted)",
-        "Size of data written per second (formatted)",
+    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_DISKIO_MODULE_NAME, "{1} (R) - {2} (W)", FF_DISKIO_NUM_FORMAT_ARGS, ((const char* []) {
+        "Size of data read [per second] (formatted)",
+        "Size of data written [per second] (formatted)",
         "Device name",
         "Device raw file path",
-        "Size of data read per second (in bytes)",
-        "Size of data written per second (in bytes)",
+        "Size of data read [per second] (in bytes)",
+        "Size of data written [per second] (in bytes)",
         "Number of reads",
         "Number of writes",
-    });
+    }));
 }
 
 void ffInitDiskIOOptions(FFDiskIOOptions* options)
@@ -202,6 +220,7 @@ void ffInitDiskIOOptions(FFDiskIOOptions* options)
     ffOptionInitModuleArg(&options->moduleArgs);
 
     ffStrbufInit(&options->namePrefix);
+    options->detectTotal = false;
 }
 
 void ffDestroyDiskIOOptions(FFDiskIOOptions* options)

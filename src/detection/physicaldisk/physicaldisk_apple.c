@@ -7,23 +7,45 @@
 #include <IOKit/storage/IOBlockStorageDriver.h>
 #include <IOKit/storage/IOStorageDeviceCharacteristics.h>
 #include <IOKit/storage/IOStorageProtocolCharacteristics.h>
+#include <IOKit/storage/nvme/NVMeSMARTLibExternal.h>
 
-static inline void wrapIoObjectRelease(io_service_t* service)
+static inline void wrapIoDestroyPlugInInterface(IOCFPlugInInterface*** pluginInf)
 {
-    assert(service);
-    if (*service)
-        IOObjectRelease(*service);
+    assert(pluginInf);
+    if (*pluginInf)
+        IODestroyPlugInInterface(*pluginInf);
 }
-#define FF_IOOBJECT_AUTO_RELEASE __attribute__((__cleanup__(wrapIoObjectRelease)))
+
+static const char* detectSsdTemp(io_service_t entryPhysical, double* temp)
+{
+    __attribute__((__cleanup__(wrapIoDestroyPlugInInterface))) IOCFPlugInInterface** pluginInf = NULL;
+    int32_t score;
+    if (IOCreatePlugInInterfaceForService(entryPhysical, kIONVMeSMARTUserClientTypeID, kIOCFPlugInInterfaceID, &pluginInf, &score) != kIOReturnSuccess)
+        return "IOCreatePlugInInterfaceForService() failed";
+
+    IONVMeSMARTInterface** smartInf = NULL;
+    if ((*pluginInf)->QueryInterface(pluginInf, CFUUIDGetUUIDBytes(kIONVMeSMARTInterfaceID), (LPVOID) &smartInf) != kIOReturnSuccess)
+        return "QueryInterface() failed";
+
+    NVMeSMARTData smartData;
+    const char* error = NULL;
+    if ((*smartInf)->SMARTReadData(smartInf, &smartData) == kIOReturnSuccess)
+        *temp = smartData.TEMPERATURE - 273;
+    else
+        error = "SMARTReadData() failed";
+
+    (*pluginInf)->Release(smartInf);
+    return error;
+}
 
 const char* ffDetectPhysicalDisk(FFlist* result, FFPhysicalDiskOptions* options)
 {
     FF_IOOBJECT_AUTO_RELEASE io_iterator_t iterator = 0;
-    if(IOServiceGetMatchingServices(MACH_PORT_NULL, IOServiceMatching(kIOMediaClass), &iterator) != KERN_SUCCESS)
+    if (IOServiceGetMatchingServices(MACH_PORT_NULL, IOServiceMatching(kIOMediaClass), &iterator) != KERN_SUCCESS)
         return "IOServiceGetMatchingServices() failed";
 
     io_registry_entry_t registryEntry;
-    while((registryEntry = IOIteratorNext(iterator)) != 0)
+    while ((registryEntry = IOIteratorNext(iterator)) != IO_OBJECT_NULL)
     {
         FF_IOOBJECT_AUTO_RELEASE io_registry_entry_t entryPartition = registryEntry;
 
@@ -43,14 +65,19 @@ const char* ffDetectPhysicalDisk(FFlist* result, FFPhysicalDiskOptions* options)
 
         FFPhysicalDiskResult* device = (FFPhysicalDiskResult*) ffListAdd(result);
         ffStrbufInit(&device->serial);
+        ffStrbufInit(&device->revision);
         ffStrbufInitS(&device->name, deviceName);
         ffStrbufInit(&device->devPath);
         ffStrbufInit(&device->interconnect);
         device->type = FF_PHYSICALDISK_TYPE_NONE;
         device->size = 0;
+        device->temperature = FF_PHYSICALDISK_TEMP_UNSET;
 
         FF_CFTYPE_AUTO_RELEASE CFBooleanRef removable = IORegistryEntryCreateCFProperty(entryPartition, CFSTR(kIOMediaRemovableKey), kCFAllocatorDefault, kNilOptions);
         device->type |= CFBooleanGetValue(removable) ? FF_PHYSICALDISK_TYPE_REMOVABLE : FF_PHYSICALDISK_TYPE_FIXED;
+
+        FF_CFTYPE_AUTO_RELEASE CFBooleanRef writable = IORegistryEntryCreateCFProperty(entryPartition, CFSTR(kIOMediaWritableKey), kCFAllocatorDefault, kNilOptions);
+        device->type |= CFBooleanGetValue(writable) ? FF_PHYSICALDISK_TYPE_READWRITE : FF_PHYSICALDISK_TYPE_READONLY;
 
         FF_CFTYPE_AUTO_RELEASE CFStringRef bsdName = IORegistryEntryCreateCFProperty(entryPartition, CFSTR(kIOBSDNameKey), kCFAllocatorDefault, kNilOptions);
         if (bsdName)
@@ -76,6 +103,9 @@ const char* ffDetectPhysicalDisk(FFlist* result, FFPhysicalDiskOptions* options)
             if (deviceCharacteristics)
             {
                 ffCfDictGetString(deviceCharacteristics, CFSTR(kIOPropertyProductSerialNumberKey), &device->serial);
+                ffStrbufTrim(&device->serial, ' ');
+                ffCfDictGetString(deviceCharacteristics, CFSTR(kIOPropertyProductRevisionLevelKey), &device->revision);
+                ffStrbufTrim(&device->revision, ' ');
 
                 CFStringRef mediumType = (CFStringRef) CFDictionaryGetValue(deviceCharacteristics, CFSTR(kIOPropertyMediumTypeKey));
                 if (mediumType)
@@ -85,6 +115,13 @@ const char* ffDetectPhysicalDisk(FFlist* result, FFPhysicalDiskOptions* options)
                     else if (CFStringCompare(mediumType, CFSTR(kIOPropertyMediumTypeRotationalKey), 0) == 0)
                         device->type |= FF_PHYSICALDISK_TYPE_HDD;
                 }
+            }
+
+            if (options->temp)
+            {
+                FF_CFTYPE_AUTO_RELEASE CFBooleanRef nvmeSMARTCapable = IORegistryEntryCreateCFProperty(entryPhysical, CFSTR(kIOPropertyNVMeSMARTCapableKey), kCFAllocatorDefault, kNilOptions);
+                if (nvmeSMARTCapable && CFBooleanGetValue(nvmeSMARTCapable))
+                    detectSsdTemp(entryPhysical, &device->temperature);
             }
         }
     }

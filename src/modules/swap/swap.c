@@ -1,7 +1,7 @@
 #include "common/printing.h"
 #include "common/jsonconfig.h"
 #include "common/parsing.h"
-#include "common/bar.h"
+#include "common/percent.h"
 #include "detection/swap/swap.h"
 #include "modules/swap/swap.h"
 #include "util/stringUtils.h"
@@ -15,7 +15,7 @@ void ffPrintSwap(FFSwapOptions* options)
 
     if(error)
     {
-        ffPrintError(FF_SWAP_MODULE_NAME, 0, &options->moduleArgs, "%s", error);
+        ffPrintError(FF_SWAP_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "%s", error);
         return;
     }
 
@@ -37,17 +37,19 @@ void ffPrintSwap(FFSwapOptions* options)
         {
             if(instance.config.display.percentType & FF_PERCENTAGE_TYPE_BAR_BIT)
             {
-                ffAppendPercentBar(&str, 0, 0, 50, 80);
+                ffPercentAppendBar(&str, 0, options->percent);
                 ffStrbufAppendC(&str, ' ');
             }
             if(!(instance.config.display.percentType & FF_PERCENTAGE_TYPE_HIDE_OTHERS_BIT))
                 ffStrbufAppendS(&str, "Disabled");
+            else
+                ffPercentAppendNum(&str, 0, options->percent, str.length > 0);
         }
         else
         {
             if(instance.config.display.percentType & FF_PERCENTAGE_TYPE_BAR_BIT)
             {
-                ffAppendPercentBar(&str, percentage, 0, 50, 80);
+                ffPercentAppendBar(&str, percentage, options->percent);
                 ffStrbufAppendC(&str, ' ');
             }
 
@@ -55,7 +57,7 @@ void ffPrintSwap(FFSwapOptions* options)
                 ffStrbufAppendF(&str, "%s / %s ", usedPretty.chars, totalPretty.chars);
 
             if(instance.config.display.percentType & FF_PERCENTAGE_TYPE_NUM_BIT)
-                ffAppendPercentNum(&str, percentage, 50, 80, str.length > 0);
+                ffPercentAppendNum(&str, percentage, options->percent, str.length > 0);
         }
 
         ffStrbufTrimRight(&str, ' ');
@@ -64,12 +66,12 @@ void ffPrintSwap(FFSwapOptions* options)
     else
     {
         FF_STRBUF_AUTO_DESTROY percentageStr = ffStrbufCreate();
-        ffAppendPercentNum(&percentageStr, percentage, 50, 80, false);
-        ffPrintFormat(FF_SWAP_MODULE_NAME, 0, &options->moduleArgs, FF_SWAP_NUM_FORMAT_ARGS, (FFformatarg[]){
+        ffPercentAppendNum(&percentageStr, percentage, options->percent, false);
+        FF_PRINT_FORMAT_CHECKED(FF_SWAP_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_SWAP_NUM_FORMAT_ARGS, ((FFformatarg[]){
             {FF_FORMAT_ARG_TYPE_STRBUF, &usedPretty},
             {FF_FORMAT_ARG_TYPE_STRBUF, &totalPretty},
             {FF_FORMAT_ARG_TYPE_STRBUF, &percentageStr},
-        });
+        }));
     }
 }
 
@@ -78,6 +80,9 @@ bool ffParseSwapCommandOptions(FFSwapOptions* options, const char* key, const ch
     const char* subKey = ffOptionTestPrefix(key, FF_SWAP_MODULE_NAME);
     if (!subKey) return false;
     if (ffOptionParseModuleArgs(key, subKey, value, &options->moduleArgs))
+        return true;
+
+    if (ffPercentParseCommandOptions(key, subKey, value, &options->percent))
         return true;
 
     return false;
@@ -96,7 +101,10 @@ void ffParseSwapJsonObject(FFSwapOptions* options, yyjson_val* module)
         if (ffJsonConfigParseModuleArgs(key, val, &options->moduleArgs))
             continue;
 
-        ffPrintError(FF_SWAP_MODULE_NAME, 0, &options->moduleArgs, "Unknown JSON key %s", key);
+        if (ffPercentParseJsonObject(key, val, &options->percent))
+            continue;
+
+        ffPrintError(FF_SWAP_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "Unknown JSON key %s", key);
     }
 }
 
@@ -104,6 +112,8 @@ void ffGenerateSwapJsonConfig(FFSwapOptions* options, yyjson_mut_doc* doc, yyjso
 {
     __attribute__((__cleanup__(ffDestroySwapOptions))) FFSwapOptions defaultOptions;
     ffInitSwapOptions(&defaultOptions);
+
+    ffPercentGenerateJsonConfig(doc, module, defaultOptions.percent, options->percent);
 
     ffJsonConfigGenerateModuleArgsConfig(doc, module, &defaultOptions.moduleArgs, &options->moduleArgs);
 }
@@ -126,11 +136,11 @@ void ffGenerateSwapJsonResult(FF_MAYBE_UNUSED FFSwapOptions* options, yyjson_mut
 
 void ffPrintSwapHelpFormat(void)
 {
-    ffPrintModuleFormatHelp(FF_SWAP_MODULE_NAME, "{1} / {2} ({3})", FF_SWAP_NUM_FORMAT_ARGS, (const char* []) {
+    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_SWAP_MODULE_NAME, "{1} / {2} ({3})", FF_SWAP_NUM_FORMAT_ARGS, ((const char* []) {
         "Used size",
         "Total size",
         "Percentage used"
-    });
+    }));
 }
 
 void ffInitSwapOptions(FFSwapOptions* options)
@@ -147,6 +157,7 @@ void ffInitSwapOptions(FFSwapOptions* options)
         ffGenerateSwapJsonConfig
     );
     ffOptionInitModuleArg(&options->moduleArgs);
+    options->percent = (FFColorRangeConfig) { 50, 80 };
 }
 
 void ffDestroySwapOptions(FFSwapOptions* options)

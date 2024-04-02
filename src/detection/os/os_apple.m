@@ -1,6 +1,8 @@
 #include "os.h"
+#include "common/io/io.h"
 #include "common/sysctl.h"
 #include "util/stringUtils.h"
+#include "util/mallocHelper.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -72,11 +74,11 @@ static bool detectOSCodeName(FFOSResult* os)
 
 static void parseOSXSoftwareLicense(FFOSResult* os)
 {
-    FILE* rtf = fopen("/System/Library/CoreServices/Setup Assistant.app/Contents/Resources/en.lproj/OSXSoftwareLicense.rtf", "r");
+    FF_AUTO_CLOSE_FILE FILE* rtf = fopen("/System/Library/CoreServices/Setup Assistant.app/Contents/Resources/en.lproj/OSXSoftwareLicense.rtf", "r");
     if(rtf == NULL)
         return;
 
-    char* line = NULL;
+    FF_AUTO_FREE char* line = NULL;
     size_t len = 0;
     const char* searchStr = "\\f0\\b SOFTWARE LICENSE AGREEMENT FOR macOS ";
     while(getline(&line, &len, rtf) != EOF)
@@ -89,27 +91,10 @@ static void parseOSXSoftwareLicense(FFOSResult* os)
             break;
         }
     }
-
-    if(line != NULL)
-        free(line);
-
-    fclose(rtf);
 }
 
 void ffDetectOSImpl(FFOSResult* os)
 {
-    ffStrbufInit(&os->name);
-    ffStrbufInit(&os->version);
-    ffStrbufInit(&os->buildID);
-    ffStrbufInit(&os->id);
-    ffStrbufInit(&os->prettyName);
-    ffStrbufInit(&os->versionID);
-
-    ffStrbufInit(&os->codename);
-    ffStrbufInit(&os->idLike);
-    ffStrbufInit(&os->variant);
-    ffStrbufInit(&os->variantID);
-
     parseSystemVersion(os);
 
     if(ffStrbufStartsWithIgnCaseS(&os->name, "MacOS"))

@@ -13,10 +13,10 @@ typedef struct FFMonitorInfo
 } FFMonitorInfo;
 
 static CALLBACK BOOL MonitorEnumProc(
-  HMONITOR hMonitor,
-  FF_MAYBE_UNUSED HDC hdc,
-  FF_MAYBE_UNUSED LPRECT lpRect,
-  LPARAM lParam
+    HMONITOR hMonitor,
+    FF_MAYBE_UNUSED HDC hdc,
+    FF_MAYBE_UNUSED LPRECT lpRect,
+    LPARAM lParam
 )
 {
     FFlist* monitors = (FFlist*) lParam;
@@ -129,8 +129,9 @@ static void detectDisplays(FFDisplayServerResult* ds)
                 (uint32_t) (monitorInfo->info.rcMonitor.bottom - monitorInfo->info.rcMonitor.top),
                 rotation,
                 &name,
-                path->targetInfo.outputTechnology == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL ||
-                path->targetInfo.outputTechnology == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EMBEDDED ||
+                path->targetInfo.outputTechnology == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_OTHER ? FF_DISPLAY_TYPE_UNKNOWN :
+                    path->targetInfo.outputTechnology == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL ||
+                    path->targetInfo.outputTechnology == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EMBEDDED ||
                     path->targetInfo.outputTechnology == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_UDI_EMBEDDED
                     ? FF_DISPLAY_TYPE_BUILTIN : FF_DISPLAY_TYPE_EXTERNAL,
                 !!(monitorInfo->info.dwFlags & MONITORINFOF_PRIMARY),
@@ -145,20 +146,16 @@ void ffConnectDisplayServerImpl(FFDisplayServerResult* ds)
     BOOL enabled;
     if(SUCCEEDED(DwmIsCompositionEnabled(&enabled)) && enabled)
     {
-        ffStrbufInitStatic(&ds->wmProcessName, "dwm.exe");
-        ffStrbufInitStatic(&ds->wmPrettyName, "Desktop Window Manager");
+        ffStrbufSetStatic(&ds->wmProcessName, "dwm.exe");
+        ffStrbufSetStatic(&ds->wmPrettyName, "Desktop Window Manager");
     }
     else
     {
         // `explorer.exe` only provides a subset of WM functions, as well as the taskbar and desktop icons.
         // While a window itself is drawn by kernel (GDI). Killing `explorer.exe` won't affect how windows are displayed generally.
-        ffStrbufInitStatic(&ds->wmProcessName, "explorer.exe");
-        ffStrbufInitStatic(&ds->wmPrettyName, "Internal");
+        ffStrbufSetStatic(&ds->wmProcessName, "explorer.exe");
+        ffStrbufSetStatic(&ds->wmPrettyName, "Internal");
     }
-    ffStrbufInit(&ds->wmProtocolName);
-    ffStrbufInit(&ds->deProcessName);
-    ffStrbufInit(&ds->dePrettyName);
-    ffListInit(&ds->displays, sizeof(FFDisplayResult));
 
     detectDisplays(ds);
 

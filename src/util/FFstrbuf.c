@@ -54,6 +54,7 @@ void ffStrbufEnsureFree(FFstrbuf* strbuf, uint32_t free)
     strbuf->allocated = allocate;
 }
 
+// for an empty buffer, free + 1 length memory will be allocated(+1 for the NUL)
 void ffStrbufEnsureFixedLengthFree(FFstrbuf* strbuf, uint32_t free)
 {
     uint32_t oldFree = ffStrbufGetFree(strbuf);
@@ -64,7 +65,7 @@ void ffStrbufEnsureFixedLengthFree(FFstrbuf* strbuf, uint32_t free)
 
     if(strbuf->allocated == 0)
     {
-        newCap += strbuf->length + 1; // +1 for the NUL
+        newCap += strbuf->length + 1;
         char* newbuf = malloc(sizeof(*strbuf->chars) * newCap);
         if(strbuf->length == 0)
             *newbuf = '\0';
@@ -118,22 +119,6 @@ void ffStrbufAppendNS(FFstrbuf* strbuf, uint32_t length, const char* value)
     strbuf->chars[strbuf->length] = '\0';
 }
 
-void ffStrbufAppendNSExludingC(FFstrbuf* strbuf, uint32_t length, const char* value, char exclude)
-{
-    if(value == NULL || length == 0)
-        return;
-
-    ffStrbufEnsureFree(strbuf, length);
-
-    for(uint32_t i = 0; i < length; i++)
-    {
-        if(value[i] != exclude)
-        strbuf->chars[strbuf->length++] = value[i];
-    }
-
-    strbuf->chars[strbuf->length] = '\0';
-}
-
 void ffStrbufAppendTransformS(FFstrbuf* strbuf, const char* value, int(*transformFunc)(int))
 {
     if(value == NULL)
@@ -174,16 +159,17 @@ void ffStrbufAppendVF(FFstrbuf* strbuf, const char* format, va_list arguments)
         strbuf->length += (uint32_t) written;
 }
 
-void ffStrbufAppendSUntilC(FFstrbuf* strbuf, const char* value, char until)
+const char* ffStrbufAppendSUntilC(FFstrbuf* strbuf, const char* value, char until)
 {
     if(value == NULL)
-        return;
+        return NULL;
 
     char* end = strchr(value, until);
     if(end == NULL)
         ffStrbufAppendS(strbuf, value);
     else
         ffStrbufAppendNS(strbuf, (uint32_t) (end - value), value);
+    return end;
 }
 
 void ffStrbufSetF(FFstrbuf* strbuf, const char* format, ...)
@@ -264,13 +250,39 @@ void ffStrbufTrimLeft(FFstrbuf* strbuf, char c)
 
 void ffStrbufTrimRight(FFstrbuf* strbuf, char c)
 {
-    if(strbuf->length == 0)
+    if (strbuf->length == 0)
         return;
 
-    while(ffStrbufEndsWithC(strbuf, c))
-        --strbuf->length;
+    if (!ffStrbufEndsWithC(strbuf, c))
+        return;
 
-    if(strbuf->allocated == 0)
+    do
+        --strbuf->length;
+    while (ffStrbufEndsWithC(strbuf, c));
+
+    if (strbuf->allocated == 0)
+    {
+        //static string
+        ffStrbufInitNS(strbuf, strbuf->length, strbuf->chars);
+        return;
+    }
+
+    strbuf->chars[strbuf->length] = '\0';
+}
+
+void ffStrbufTrimRightSpace(FFstrbuf* strbuf)
+{
+    if (strbuf->length == 0)
+        return;
+
+    if (!ffStrbufEndsWithFn(strbuf, isspace))
+        return;
+
+    do
+        --strbuf->length;
+    while (ffStrbufEndsWithFn(strbuf, isspace));
+
+    if (strbuf->allocated == 0)
     {
         //static string
         ffStrbufInitNS(strbuf, strbuf->length, strbuf->chars);
@@ -465,6 +477,13 @@ uint64_t ffStrbufToUInt(const FFstrbuf* strbuf, uint64_t defaultValue)
     char* str_end;
     unsigned long long result = strtoull(strbuf->chars, &str_end, 10);
     return str_end == strbuf->chars ? defaultValue : (uint64_t)result;
+}
+
+int64_t ffStrbufToSInt(const FFstrbuf* strbuf, int64_t defaultValue)
+{
+    char* str_end;
+    long long result = strtoll(strbuf->chars, &str_end, 10);
+    return str_end == strbuf->chars ? defaultValue : (int64_t)result;
 }
 
 void ffStrbufUpperCase(FFstrbuf* strbuf)

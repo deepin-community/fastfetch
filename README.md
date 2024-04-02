@@ -27,16 +27,31 @@ There are [screenshots on different platforms](https://github.com/fastfetch-cli/
 
 ### Linux
 
-* Debian / Ubuntu: Download `fastfetch-<version>-Linux.deb` from [Github release page](https://github.com/fastfetch-cli/fastfetch/releases/latest) and `sudo apt install fastfetch-<version>-Linux.deb`
-* Arch Linux: `sudo pacman -S fastfetch`
+Some distros packaged a outdated fastfetch version. Older version is not supported, please always ensure that the latest version is used.
+
+* Ubuntu: [`ppa:zhangsongcui3371/fastfetch`](https://launchpad.net/~zhangsongcui3371/+archive/ubuntu/fastfetch) (for Ubuntu 22.04 or above)
+* Debian / Ubuntu: Download `fastfetch-<version>-Linux.deb` from [Github release page](https://github.com/fastfetch-cli/fastfetch/releases/latest) and `dpkg -i fastfetch-<version>-Linux.deb` (for Ubuntu 22.04 or above and Debian 12 or above).
+* Arch Linux: `sudo pacman -S fastfetch`. You can also find fastfetch [on the AUR](https://aur.archlinux.org/packages/fastfetch-git).
 * Fedora: `sudo dnf install fastfetch`
 * Gentoo: `sudo emerge --ask app-misc/fastfetch`
+* Alpine: `apk add --upgrade fastfetch`
+* NixOS: `nix-shell -p fastfetch`
+* openSUSE: `sudo zypper install fastfetch`
+* ALT Linux: `sudo apt-get install fastfetch`
+
+Replace sudo with doas depending on what you use.
 
 [See also if fastfetch has been packaged for your favorite Linux distro](#Packaging)
 
 ### macOS
 
+...via [HomeBrew](https://brew.sh):
+
 `brew install fastfetch`
+
+...via [MacPorts](https://www.macports.org):
+
+`sudo port install fastfetch`
 
 ### Windows
 

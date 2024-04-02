@@ -1,15 +1,11 @@
 #include "displayserver_linux.h"
-#include "common/io/io.h"
+
+#ifdef __FreeBSD__
+    #include "common/settings.h"
+#endif
 
 void ffConnectDisplayServerImpl(FFDisplayServerResult* ds)
 {
-    ffStrbufInit(&ds->wmProcessName);
-    ffStrbufInit(&ds->wmPrettyName);
-    ffStrbufInit(&ds->wmProtocolName);
-    ffStrbufInit(&ds->deProcessName);
-    ffStrbufInit(&ds->dePrettyName);
-    ffListInitA(&ds->displays, sizeof(FFDisplayResult), 4);
-
     if (instance.config.general.dsForceDrm == FF_DS_FORCE_DRM_TYPE_FALSE)
     {
         //We try wayland as our preferred display server, as it supports the most features.
@@ -37,6 +33,26 @@ void ffConnectDisplayServerImpl(FFDisplayServerResult* ds)
     //Use it if all connections failed
     if(ds->displays.length == 0)
         ffdsConnectDrm(ds);
+
+    #ifdef __FreeBSD__
+    if(ds->displays.length == 0)
+    {
+        FF_STRBUF_AUTO_DESTROY buf = ffStrbufCreate();
+        if (ffSettingsGetFreeBSDKenv("screen.width", &buf))
+        {
+            uint32_t width = (uint32_t) ffStrbufToUInt(&buf, 0);
+            if (width)
+            {
+                ffStrbufClear(&buf);
+                if (ffSettingsGetFreeBSDKenv("screen.height", &buf))
+                {
+                    uint32_t height = (uint32_t) ffStrbufToUInt(&buf, 0);
+                    ffdsAppendDisplay(ds, width, height, 0, 0, 0, 0, NULL, FF_DISPLAY_TYPE_UNKNOWN, false, 0);
+                }
+            }
+        }
+    }
+    #endif
 
     //This fills in missing information about WM / DE by using env vars and iterating processes
     ffdsDetectWMDE(ds);

@@ -1,7 +1,7 @@
 #include "common/printing.h"
 #include "common/jsonconfig.h"
 #include "common/parsing.h"
-#include "common/bar.h"
+#include "common/percent.h"
 #include "detection/disk/disk.h"
 #include "modules/disk/disk.h"
 #include "util/stringUtils.h"
@@ -34,11 +34,11 @@ static void printDisk(FFDiskOptions* options, const FFDisk* disk)
     }
     else
     {
-        ffParseFormatString(&key, &options->moduleArgs.key, 3, (FFformatarg[]){
+        FF_PARSE_FORMAT_STRING_CHECKED(&key, &options->moduleArgs.key, 3, ((FFformatarg[]){
             {FF_FORMAT_ARG_TYPE_STRBUF, &disk->mountpoint},
             {FF_FORMAT_ARG_TYPE_STRBUF, &disk->name},
             {FF_FORMAT_ARG_TYPE_STRBUF, &disk->mountFrom},
-        });
+        }));
     }
 
     FF_STRBUF_AUTO_DESTROY usedPretty = ffStrbufCreate();
@@ -59,7 +59,7 @@ static void printDisk(FFDiskOptions* options, const FFDisk* disk)
         {
             if(instance.config.display.percentType & FF_PERCENTAGE_TYPE_BAR_BIT)
             {
-                ffAppendPercentBar(&str, bytesPercentage, 0, 50, 80);
+                ffPercentAppendBar(&str, bytesPercentage, options->percent);
                 ffStrbufAppendC(&str, ' ');
             }
 
@@ -68,7 +68,7 @@ static void printDisk(FFDiskOptions* options, const FFDisk* disk)
 
             if(instance.config.display.percentType & FF_PERCENTAGE_TYPE_NUM_BIT)
             {
-                ffAppendPercentNum(&str, bytesPercentage, 50, 80, str.length > 0);
+                ffPercentAppendNum(&str, bytesPercentage, options->percent, str.length > 0);
                 ffStrbufAppendC(&str, ' ');
             }
         }
@@ -104,15 +104,15 @@ static void printDisk(FFDiskOptions* options, const FFDisk* disk)
     else
     {
         FF_STRBUF_AUTO_DESTROY bytesPercentageStr = ffStrbufCreate();
-        ffAppendPercentNum(&bytesPercentageStr, bytesPercentage, 50, 80, false);
+        ffPercentAppendNum(&bytesPercentageStr, bytesPercentage, options->percent, false);
         FF_STRBUF_AUTO_DESTROY filesPercentageStr = ffStrbufCreate();
         double filesPercentage = disk->filesTotal > 0 ? ((double) disk->filesUsed / (double) disk->filesTotal) * 100.0 : 0;
-        ffAppendPercentNum(&filesPercentageStr, filesPercentage, 50, 80, false);
+        ffPercentAppendNum(&filesPercentageStr, filesPercentage, options->percent, false);
 
         bool isExternal = !!(disk->type & FF_DISK_VOLUME_TYPE_EXTERNAL_BIT);
         bool isHidden = !!(disk->type & FF_DISK_VOLUME_TYPE_HIDDEN_BIT);
         bool isReadOnly = !!(disk->type & FF_DISK_VOLUME_TYPE_READONLY_BIT);
-        ffPrintFormatString(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY, FF_DISK_NUM_FORMAT_ARGS, (FFformatarg[]){
+        FF_PRINT_FORMAT_CHECKED(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY, FF_DISK_NUM_FORMAT_ARGS, ((FFformatarg[]) {
             {FF_FORMAT_ARG_TYPE_STRBUF, &usedPretty},
             {FF_FORMAT_ARG_TYPE_STRBUF, &totalPretty},
             {FF_FORMAT_ARG_TYPE_STRBUF, &bytesPercentageStr},
@@ -124,7 +124,7 @@ static void printDisk(FFDiskOptions* options, const FFDisk* disk)
             {FF_FORMAT_ARG_TYPE_STRBUF, &disk->filesystem},
             {FF_FORMAT_ARG_TYPE_STRBUF, &disk->name},
             {FF_FORMAT_ARG_TYPE_BOOL, &isReadOnly},
-        });
+        }));
     }
 }
 
@@ -139,7 +139,7 @@ static void printMountpoint(FFDiskOptions* options, const FFlist* disks, const c
         }
     }
 
-    ffPrintError(FF_DISK_MODULE_NAME, 0, &options->moduleArgs, "No disk found for mountpoint: %s", mountpoint);
+    ffPrintError(FF_DISK_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "No disk found for mountpoint: %s", mountpoint);
 }
 
 static void printMountpoints(FFDiskOptions* options, const FFlist* disks)
@@ -183,7 +183,7 @@ void ffPrintDisk(FFDiskOptions* options)
 
     if(error)
     {
-        ffPrintError(FF_DISK_MODULE_NAME, 0, &options->moduleArgs, "%s", error);
+        ffPrintError(FF_DISK_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "%s", error);
     }
     else
     {
@@ -278,6 +278,9 @@ bool ffParseDiskCommandOptions(FFDiskOptions* options, const char* key, const ch
         return true;
     }
 
+    if (ffPercentParseCommandOptions(key, subKey, value, &options->percent))
+        return true;
+
     return false;
 }
 
@@ -354,7 +357,10 @@ void ffParseDiskJsonObject(FFDiskOptions* options, yyjson_val* module)
             continue;
         }
 
-        ffPrintError(FF_DISK_MODULE_NAME, 0, &options->moduleArgs, "Unknown JSON key %s", key);
+        if (ffPercentParseJsonObject(key, val, &options->percent))
+            continue;
+
+        ffPrintError(FF_DISK_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "Unknown JSON key %s", key);
     }
 }
 
@@ -388,6 +394,8 @@ void ffGenerateDiskJsonConfig(FFDiskOptions* options, yyjson_mut_doc* doc, yyjso
 
     if (defaultOptions.calcType != options->calcType)
         yyjson_mut_obj_add_bool(doc, module, "useAvailable", options->calcType == FF_DISK_CALC_TYPE_AVAILABLE);
+
+    ffPercentGenerateJsonConfig(doc, module, defaultOptions.percent, options->percent);
 }
 
 void ffGenerateDiskJsonResult(FFDiskOptions* options, yyjson_mut_doc* doc, yyjson_mut_val* module)
@@ -414,8 +422,16 @@ void ffGenerateDiskJsonResult(FFDiskOptions* options, yyjson_mut_doc* doc, yyjso
         yyjson_mut_obj_add_uint(doc, bytes, "used", item->bytesUsed);
 
         yyjson_mut_val* files = yyjson_mut_obj_add_obj(doc, obj, "files");
-        yyjson_mut_obj_add_uint(doc, files, "total", item->filesTotal);
-        yyjson_mut_obj_add_uint(doc, files, "used", item->filesUsed);
+        if (item->filesTotal == 0 && item->filesUsed == 0)
+        {
+            yyjson_mut_obj_add_null(doc, files, "total");
+            yyjson_mut_obj_add_null(doc, files, "used");
+        }
+        else
+        {
+            yyjson_mut_obj_add_uint(doc, files, "total", item->filesTotal);
+            yyjson_mut_obj_add_uint(doc, files, "used", item->filesUsed);
+        }
 
         yyjson_mut_obj_add_strbuf(doc, obj, "filesystem", &item->filesystem);
         yyjson_mut_obj_add_strbuf(doc, obj, "mountpoint", &item->mountpoint);
@@ -445,7 +461,7 @@ void ffGenerateDiskJsonResult(FFDiskOptions* options, yyjson_mut_doc* doc, yyjso
 
 void ffPrintDiskHelpFormat(void)
 {
-    ffPrintModuleFormatHelp(FF_DISK_MODULE_NAME, "{1} / {2} ({3}) - {9}", FF_DISK_NUM_FORMAT_ARGS, (const char* []) {
+    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_DISK_MODULE_NAME, "{1} / {2} ({3}) - {9}", FF_DISK_NUM_FORMAT_ARGS, ((const char* []) {
         "Size used",
         "Size total",
         "Size percentage",
@@ -454,8 +470,10 @@ void ffPrintDiskHelpFormat(void)
         "Files percentage",
         "True if external volume",
         "True if hidden volume",
-        "Filesystem"
-    });
+        "Filesystem",
+        "Label / name",
+        "True if read-only",
+    }));
 }
 
 void ffInitDiskOptions(FFDiskOptions* options)
@@ -476,6 +494,7 @@ void ffInitDiskOptions(FFDiskOptions* options)
     ffStrbufInit(&options->folders);
     options->showTypes = FF_DISK_VOLUME_TYPE_REGULAR_BIT | FF_DISK_VOLUME_TYPE_EXTERNAL_BIT | FF_DISK_VOLUME_TYPE_READONLY_BIT;
     options->calcType = FF_DISK_CALC_TYPE_FREE;
+    options->percent = (FFColorRangeConfig) { 50, 80 };
 }
 
 void ffDestroyDiskOptions(FFDiskOptions* options)

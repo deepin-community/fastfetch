@@ -5,7 +5,7 @@
 #include "modules/vulkan/vulkan.h"
 #include "util/stringUtils.h"
 
-#define FF_VULKAN_NUM_FORMAT_ARGS 3
+#define FF_VULKAN_NUM_FORMAT_ARGS 4
 
 void ffPrintVulkan(FFVulkanOptions* options)
 {
@@ -13,13 +13,20 @@ void ffPrintVulkan(FFVulkanOptions* options)
 
     if(vulkan->error)
     {
-        ffPrintError(FF_VULKAN_MODULE_NAME, 0, &options->moduleArgs, "%s", vulkan->error);
+        ffPrintError(FF_VULKAN_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "%s", vulkan->error);
         return;
     }
 
     if(options->moduleArgs.outputFormat.length == 0)
     {
         ffPrintLogoAndKey(FF_VULKAN_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT);
+
+        if (vulkan->apiVersion.length == 0 && vulkan->driver.length == 0)
+        {
+            ffStrbufWriteTo(&vulkan->instanceVersion, stdout);
+            puts(" [Software only]");
+            return;
+        }
 
         if(vulkan->apiVersion.length > 0)
         {
@@ -36,11 +43,12 @@ void ffPrintVulkan(FFVulkanOptions* options)
     }
     else
     {
-        ffPrintFormat(FF_VULKAN_MODULE_NAME, 0, &options->moduleArgs, FF_VULKAN_NUM_FORMAT_ARGS, (FFformatarg[]) {
+        FF_PRINT_FORMAT_CHECKED(FF_VULKAN_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_VULKAN_NUM_FORMAT_ARGS, ((FFformatarg[]) {
             {FF_FORMAT_ARG_TYPE_STRBUF, &vulkan->driver},
             {FF_FORMAT_ARG_TYPE_STRBUF, &vulkan->apiVersion},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &vulkan->conformanceVersion}
-        });
+            {FF_FORMAT_ARG_TYPE_STRBUF, &vulkan->conformanceVersion},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &vulkan->instanceVersion},
+        }));
     }
 }
 
@@ -67,7 +75,7 @@ void ffParseVulkanJsonObject(FFVulkanOptions* options, yyjson_val* module)
         if (ffJsonConfigParseModuleArgs(key, val, &options->moduleArgs))
             continue;
 
-        ffPrintError(FF_VULKAN_MODULE_NAME, 0, &options->moduleArgs, "Unknown JSON key %s", key);
+        ffPrintError(FF_VULKAN_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "Unknown JSON key %s", key);
     }
 }
 
@@ -101,6 +109,7 @@ void ffGenerateVulkanJsonResult(FF_MAYBE_UNUSED FFVulkanOptions* options, yyjson
         yyjson_mut_obj_add_strbuf(doc, gpuObj, "vendor", &vulkanGpu->vendor);
         yyjson_mut_obj_add_strbuf(doc, gpuObj, "name", &vulkanGpu->name);
         yyjson_mut_obj_add_strbuf(doc, gpuObj, "driver", &vulkanGpu->driver);
+        yyjson_mut_obj_add_strbuf(doc, gpuObj, "platformApi", &vulkanGpu->platformApi);
 
         yyjson_mut_val* memoryObj = yyjson_mut_obj_add_obj(doc, gpuObj, "memory");
 
@@ -130,17 +139,18 @@ void ffGenerateVulkanJsonResult(FF_MAYBE_UNUSED FFVulkanOptions* options, yyjson
                 yyjson_mut_obj_add_null(doc, sharedMemory, "used");
         }
 
-        yyjson_mut_obj_add_uint(doc, gpuObj, "deviceId", vulkanGpu->vulkanDeviceId);
+        yyjson_mut_obj_add_uint(doc, gpuObj, "deviceId", vulkanGpu->deviceId);
     }
 }
 
 void ffPrintVulkanHelpFormat(void)
 {
-    ffPrintModuleFormatHelp(FF_VULKAN_MODULE_NAME, "{2} - {1}", FF_VULKAN_NUM_FORMAT_ARGS, (const char* []) {
+    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_VULKAN_MODULE_NAME, "{2} - {1}", FF_VULKAN_NUM_FORMAT_ARGS, ((const char* []) {
         "Driver name",
         "API version",
-        "Conformance version"
-    });
+        "Conformance version",
+        "Instance version",
+    }));
 }
 
 void ffInitVulkanOptions(FFVulkanOptions* options)

@@ -34,6 +34,7 @@
     "terminal",
     "terminalfont",
     "terminalsize",
+    "terminaltheme",
     "cpu",
     "cpuusage",
     "gpu",
@@ -55,6 +56,7 @@
     "users",
     "bluetooth",
     "sound",
+    "camera",
     "gamepad",
     {
       "type": "weather",

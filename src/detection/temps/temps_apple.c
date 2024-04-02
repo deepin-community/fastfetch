@@ -85,12 +85,9 @@ static void smcUltostr(char *str, uint32_t val)
 
 static const char *smcCall(io_connect_t conn, uint32_t selector, SmcKeyData_t *inputStructure, SmcKeyData_t *outputStructure)
 {
-    size_t structureInputSize;
-    size_t structureOutputSize;
-    structureInputSize = sizeof(SmcKeyData_t);
-    structureOutputSize = sizeof(SmcKeyData_t);
+    size_t size = sizeof(SmcKeyData_t);
 
-    if (IOConnectCallStructMethod(conn, selector, inputStructure, structureInputSize, outputStructure, &structureOutputSize) != kIOReturnSuccess)
+    if (IOConnectCallStructMethod(conn, selector, inputStructure, size, outputStructure, &size) != kIOReturnSuccess)
         return "IOConnectCallStructMethod(conn) failed";
     return NULL;
 }
@@ -140,17 +137,13 @@ static const char *smcReadSmcVal(io_connect_t conn, const UInt32Char_t key, SmcV
 
 static const char *smcOpen(io_connect_t *conn)
 {
-    io_iterator_t iterator;
-    if (IOServiceGetMatchingServices(MACH_PORT_NULL, IOServiceMatching("AppleSMC"), &iterator) != kIOReturnSuccess)
-        return "IOServiceGetMatchingServices() failed";
-
-    io_object_t device = IOIteratorNext(iterator);
-    IOObjectRelease(iterator);
-    if (device == 0)
+    io_object_t device = IOServiceGetMatchingService(MACH_PORT_NULL, IOServiceMatching("AppleSMC"));
+    if (!device)
         return "No SMC device found";
 
     kern_return_t result = IOServiceOpen(device, mach_task_self(), 0, conn);
     IOObjectRelease(device);
+
     if (result != kIOReturnSuccess)
         return "IOServiceOpen() failed";
 
@@ -287,13 +280,16 @@ static bool detectTemp(io_connect_t conn, const char *sensor, double* sum)
     return true;
 }
 
-const char *ffDetectCoreTemps(enum FFTempType type, double *result)
+const char *ffDetectSmcTemps(enum FFTempType type, double *result)
 {
     static io_connect_t conn;
-    static dispatch_once_t once_control;
-    dispatch_once_f(&once_control, &conn, (dispatch_function_t) smcOpen);
-    if(!conn)
-        return "smcOpen() failed";
+    if (!conn)
+    {
+        if (smcOpen(&conn) != NULL)
+            conn = (io_connect_t) -1;
+    }
+    else if (conn == (io_connect_t) -1)
+        return "Could not open SMC connection";
 
     uint32_t count = 0;
     *result = 0;
@@ -323,14 +319,19 @@ const char *ffDetectCoreTemps(enum FFTempType type, double *result)
         break;
 
     case FF_TEMP_CPU_M2X:
-        count += detectTemp(conn, "Tp0A", result); // CPU core 1
-        count += detectTemp(conn, "Tp0D", result); // CPU core 2
-        count += detectTemp(conn, "Tp0E", result); // CPU core 3
-        count += detectTemp(conn, "Tp01", result); // CPU core 4
-        count += detectTemp(conn, "Tp02", result); // CPU core 5
-        count += detectTemp(conn, "Tp05", result); // CPU core 6
-        count += detectTemp(conn, "Tp06", result); // CPU core 7
-        count += detectTemp(conn, "Tp09", result); // CPU core 8
+        count += detectTemp(conn, "Tp1h", result); // CPU efficiency core 1
+        count += detectTemp(conn, "Tp1t", result); // CPU efficiency core 2
+        count += detectTemp(conn, "Tp1p", result); // CPU efficiency core 3
+        count += detectTemp(conn, "Tp1l", result); // CPU efficiency core 4
+
+        count += detectTemp(conn, "Tp01", result); // CPU performance core 1
+        count += detectTemp(conn, "Tp05", result); // CPU performance core 2
+        count += detectTemp(conn, "Tp09", result); // CPU performance core 3
+        count += detectTemp(conn, "Tp0D", result); // CPU performance core 4
+        count += detectTemp(conn, "Tp0X", result); // CPU performance core 5
+        count += detectTemp(conn, "Tp0b", result); // CPU performance core 6
+        count += detectTemp(conn, "Tp0f", result); // CPU performance core 7
+        count += detectTemp(conn, "Tp0j", result); // CPU performance core 8
         break;
 
     case FF_TEMP_CPU_M3X:

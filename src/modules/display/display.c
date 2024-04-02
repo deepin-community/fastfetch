@@ -4,7 +4,17 @@
 #include "modules/display/display.h"
 #include "util/stringUtils.h"
 
-#define FF_DISPLAY_NUM_FORMAT_ARGS 8
+#define FF_DISPLAY_NUM_FORMAT_ARGS 9
+
+static int sortByNameAsc(FFDisplayResult* a, FFDisplayResult* b)
+{
+    return ffStrbufComp(&a->name, &b->name);
+}
+
+static int sortByNameDesc(FFDisplayResult* a, FFDisplayResult* b)
+{
+    return -ffStrbufComp(&a->name, &b->name);
+}
 
 void ffPrintDisplay(FFDisplayOptions* options)
 {
@@ -12,29 +22,50 @@ void ffPrintDisplay(FFDisplayOptions* options)
 
     if(dsResult->displays.length == 0)
     {
-        ffPrintError(FF_DISPLAY_MODULE_NAME, 0, &options->moduleArgs, "Couldn't detect display");
+        ffPrintError(FF_DISPLAY_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "Couldn't detect display");
         return;
+    }
+
+    if (options->order != FF_DISPLAY_ORDER_NONE)
+    {
+        ffListSort((FFlist*) &dsResult->displays, (void*) (options->order == FF_DISPLAY_ORDER_ASC ? sortByNameAsc : sortByNameDesc));
     }
 
     if (options->compactType != FF_DISPLAY_COMPACT_TYPE_NONE)
     {
         ffPrintLogoAndKey(FF_DISPLAY_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT);
 
-        int index = 0;
+        FF_STRBUF_AUTO_DESTROY buffer = ffStrbufCreate();
         FF_LIST_FOR_EACH(FFDisplayResult, result, dsResult->displays)
         {
             if (options->compactType & FF_DISPLAY_COMPACT_TYPE_ORIGINAL_BIT)
             {
-                if (index++) putchar(' ');
-                printf("%ix%i", result->width, result->height);
+                ffStrbufAppendF(&buffer, "%ix%i", result->width, result->height);
             }
-            if (options->compactType & FF_DISPLAY_COMPACT_TYPE_SCALED_BIT)
+            else
             {
-                if (index++) putchar(' ');
-                printf("%ix%i", result->scaledWidth, result->scaledHeight);
+                ffStrbufAppendF(&buffer, "%ix%i", result->scaledWidth, result->scaledHeight);
+            }
+
+            if (options->compactType & FF_DISPLAY_COMPACT_TYPE_REFRESH_RATE_BIT)
+            {
+                if (result->refreshRate > 0)
+                {
+                    if (options->preciseRefreshRate)
+                        ffStrbufAppendF(&buffer, " @ %gHz", result->refreshRate);
+                    else
+                        ffStrbufAppendF(&buffer, " @ %iHz", (uint32_t) (result->refreshRate + 0.5));
+                }
+                ffStrbufAppendS(&buffer, ", ");
+            }
+            else
+            {
+                ffStrbufAppendC(&buffer, ' ');
             }
         }
-        putchar('\n');
+        ffStrbufTrimRight(&buffer, ' ');
+        ffStrbufTrimRight(&buffer, ',');
+        ffStrbufPutTo(&buffer, stdout);
         return;
     }
 
@@ -58,11 +89,11 @@ void ffPrintDisplay(FFDisplayOptions* options)
         }
         else
         {
-            ffParseFormatString(&key, &options->moduleArgs.key, 3, (FFformatarg[]){
+            FF_PARSE_FORMAT_STRING_CHECKED(&key, &options->moduleArgs.key, 3, ((FFformatarg[]){
                 {FF_FORMAT_ARG_TYPE_UINT, &moduleIndex},
                 {FF_FORMAT_ARG_TYPE_STRBUF, &result->name},
                 {FF_FORMAT_ARG_TYPE_STRING, displayType},
-            });
+            }));
         }
 
         if(options->moduleArgs.outputFormat.length == 0)
@@ -94,7 +125,7 @@ void ffPrintDisplay(FFDisplayOptions* options)
         }
         else
         {
-            ffPrintFormatString(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY, FF_DISPLAY_NUM_FORMAT_ARGS, (FFformatarg[]) {
+            FF_PRINT_FORMAT_CHECKED(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY, FF_DISPLAY_NUM_FORMAT_ARGS, ((FFformatarg[]) {
                 {FF_FORMAT_ARG_TYPE_UINT, &result->width},
                 {FF_FORMAT_ARG_TYPE_UINT, &result->height},
                 {FF_FORMAT_ARG_TYPE_DOUBLE, &result->refreshRate},
@@ -104,7 +135,7 @@ void ffPrintDisplay(FFDisplayOptions* options)
                 {FF_FORMAT_ARG_TYPE_STRING, displayType},
                 {FF_FORMAT_ARG_TYPE_UINT, &result->rotation},
                 {FF_FORMAT_ARG_TYPE_BOOL, &result->primary},
-            });
+            }));
         }
     }
 }
@@ -122,6 +153,8 @@ bool ffParseDisplayCommandOptions(FFDisplayOptions* options, const char* key, co
             { "none", FF_DISPLAY_COMPACT_TYPE_NONE },
             { "original", FF_DISPLAY_COMPACT_TYPE_ORIGINAL_BIT },
             { "scaled", FF_DISPLAY_COMPACT_TYPE_SCALED_BIT },
+            { "original-with-refresh-rate", FF_DISPLAY_COMPACT_TYPE_ORIGINAL_BIT | FF_DISPLAY_COMPACT_TYPE_REFRESH_RATE_BIT },
+            { "scaled-with-refresh-rate", FF_DISPLAY_COMPACT_TYPE_SCALED_BIT | FF_DISPLAY_COMPACT_TYPE_REFRESH_RATE_BIT },
             {},
         });
         return true;
@@ -130,6 +163,17 @@ bool ffParseDisplayCommandOptions(FFDisplayOptions* options, const char* key, co
     if (ffStrEqualsIgnCase(subKey, "precise-refresh-rate"))
     {
         options->preciseRefreshRate = ffOptionParseBoolean(value);
+        return true;
+    }
+
+    if (ffStrEqualsIgnCase(subKey, "order"))
+    {
+        options->order = (FFDisplayOrder) ffOptionParseEnum(key, value, (FFKeyValuePair[]) {
+            { "asc", FF_DISPLAY_ORDER_ASC },
+            { "desc", FF_DISPLAY_ORDER_DESC },
+            { "none", FF_DISPLAY_ORDER_NONE },
+            {},
+        });
         return true;
     }
 
@@ -156,10 +200,12 @@ void ffParseDisplayJsonObject(FFDisplayOptions* options, yyjson_val* module)
                 { "none", FF_DISPLAY_COMPACT_TYPE_NONE },
                 { "original", FF_DISPLAY_COMPACT_TYPE_ORIGINAL_BIT },
                 { "scaled", FF_DISPLAY_COMPACT_TYPE_SCALED_BIT },
+                { "original-with-refresh-rate", FF_DISPLAY_COMPACT_TYPE_ORIGINAL_BIT | FF_DISPLAY_COMPACT_TYPE_REFRESH_RATE_BIT },
+                { "scaled-with-refresh-rate", FF_DISPLAY_COMPACT_TYPE_SCALED_BIT | FF_DISPLAY_COMPACT_TYPE_REFRESH_RATE_BIT },
                 {},
             });
             if (error)
-                ffPrintError(FF_DISPLAY_MODULE_NAME, 0, &options->moduleArgs, "Invalid %s value: %s", key, error);
+                ffPrintError(FF_DISPLAY_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "Invalid %s value: %s", key, error);
             else
                 options->compactType = (FFDisplayCompactType) value;
             continue;
@@ -171,7 +217,23 @@ void ffParseDisplayJsonObject(FFDisplayOptions* options, yyjson_val* module)
             continue;
         }
 
-        ffPrintError(FF_DISPLAY_MODULE_NAME, 0, &options->moduleArgs, "Unknown JSON key %s", key);
+        if (ffStrEqualsIgnCase(key, "order"))
+        {
+            int value;
+            const char* error = ffJsonConfigParseEnum(val, &value, (FFKeyValuePair[]) {
+                { "asc", FF_DISPLAY_ORDER_ASC },
+                { "desc", FF_DISPLAY_ORDER_DESC },
+                { "none", FF_DISPLAY_ORDER_NONE },
+                {},
+            });
+            if (error)
+                ffPrintError(FF_DISPLAY_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "Invalid %s value: %s", key, error);
+            else
+                options->order = (FFDisplayOrder) value;
+            continue;
+        }
+
+        ffPrintError(FF_DISPLAY_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "Unknown JSON key %s", key);
     }
 }
 
@@ -184,7 +246,7 @@ void ffGenerateDisplayJsonConfig(FFDisplayOptions* options, yyjson_mut_doc* doc,
 
     if (options->compactType != defaultOptions.compactType)
     {
-        switch (options->compactType)
+        switch ((int) options->compactType)
         {
             case FF_DISPLAY_COMPACT_TYPE_NONE:
                 yyjson_mut_obj_add_str(doc, module, "compactType", "none");
@@ -194,6 +256,12 @@ void ffGenerateDisplayJsonConfig(FFDisplayOptions* options, yyjson_mut_doc* doc,
                 break;
             case FF_DISPLAY_COMPACT_TYPE_SCALED_BIT:
                 yyjson_mut_obj_add_str(doc, module, "compactType", "scaled");
+                break;
+            case FF_DISPLAY_COMPACT_TYPE_ORIGINAL_BIT | FF_DISPLAY_COMPACT_TYPE_REFRESH_RATE_BIT:
+                yyjson_mut_obj_add_str(doc, module, "compactType", "original-with-refresh-rate");
+                break;
+            case FF_DISPLAY_COMPACT_TYPE_SCALED_BIT | FF_DISPLAY_COMPACT_TYPE_REFRESH_RATE_BIT:
+                yyjson_mut_obj_add_str(doc, module, "compactType", "scaled-with-refresh-rate");
                 break;
         }
     }
@@ -241,7 +309,7 @@ void ffGenerateDisplayJsonResult(FF_MAYBE_UNUSED FFDisplayOptions* options, yyjs
 
 void ffPrintDisplayHelpFormat(void)
 {
-    ffPrintModuleFormatHelp(FF_DISPLAY_MODULE_NAME, "{1}x{2} @ {3}Hz (as {4}x{5}) [{7}]", FF_DISPLAY_NUM_FORMAT_ARGS, (const char* []) {
+    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_DISPLAY_MODULE_NAME, "{1}x{2} @ {3}Hz (as {4}x{5}) [{7}]", FF_DISPLAY_NUM_FORMAT_ARGS, ((const char* []) {
         "Screen width (in pixels)",
         "Screen height (in pixels)",
         "Screen refresh rate (in Hz)",
@@ -250,7 +318,8 @@ void ffPrintDisplayHelpFormat(void)
         "Screen name",
         "Screen type (builtin, external or unknown)",
         "Screen rotation (in degrees)",
-    });
+        "True if being the primary screen",
+    }));
 }
 
 void ffInitDisplayOptions(FFDisplayOptions* options)

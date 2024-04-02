@@ -1,5 +1,4 @@
 #include "fastfetch.h"
-#include "common/thread.h"
 #include "detection/gpu/gpu.h"
 #include "detection/vulkan/vulkan.h"
 
@@ -8,7 +7,7 @@
 #include "common/io/io.h"
 #include "common/parsing.h"
 #include "util/stringUtils.h"
-#include "util/mallocHelper.h"
+
 #include <stdlib.h>
 #include <vulkan/vulkan.h>
 
@@ -19,7 +18,7 @@ static inline void applyVulkanVersion(uint32_t vulkanVersion, FFVersion* ffVersi
     ffVersion->patch = VK_VERSION_PATCH(vulkanVersion);
 }
 
-static void applyDriverName(VkPhysicalDeviceDriverProperties* properties, FFstrbuf* result)
+static void applyDriverName(VkPhysicalDeviceDriverPropertiesKHR* properties, FFstrbuf* result)
 {
     if(!ffStrSet(properties->driverName))
         return;
@@ -128,8 +127,8 @@ static const char* detectVulkan(FFVulkanResult* result)
         //On VK 1.1 and up, we use vkGetPhysicalDeviceProperties2, so we can put VkPhysicalDeviceDriverProperties in the pNext chain.
         //This is required to get the driver name and conformance version.
 
-        VkPhysicalDeviceDriverProperties driverProperties = {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES,
+        VkPhysicalDeviceDriverPropertiesKHR driverProperties = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES_KHR,
         };
         VkPhysicalDeviceProperties2 physicalDeviceProperties = {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
@@ -141,9 +140,13 @@ static const char* detectVulkan(FFVulkanResult* result)
         else
             ffvkGetPhysicalDeviceProperties(physicalDevices[i], &physicalDeviceProperties.properties);
 
+
+        //We don't want software rasterizers to show up as physical gpu
+        if(physicalDeviceProperties.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU)
+            continue;
+
         //If the device api version is higher than the current highest device api version, overwrite it
         //In this case, also use the current device driver name as the shown driver name
-
 
         FFVersion deviceAPIVersion = FF_VERSION_INIT;
         applyVulkanVersion(physicalDeviceProperties.properties.apiVersion, &deviceAPIVersion);
@@ -168,20 +171,17 @@ static const char* detectVulkan(FFVulkanResult* result)
 
         //Add the device to the list of devices shown by the GPU module
 
-        //We don't want software rasterizers to show up as physical gpu
-        if(physicalDeviceProperties.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU)
-            continue;
-
         // #456
         FF_LIST_FOR_EACH(FFGPUResult, gpu, result->gpus)
         {
-            if (gpu->vulkanDeviceId == physicalDeviceProperties.properties.deviceID)
+            if (gpu->deviceId == physicalDeviceProperties.properties.deviceID)
                 goto next;
         }
 
         FFGPUResult* gpu = ffListAdd(&result->gpus);
 
-        gpu->vulkanDeviceId = physicalDeviceProperties.properties.deviceID;
+        ffStrbufInitF(&gpu->platformApi, "Vulkan %u.%u.%u", deviceAPIVersion.major, deviceAPIVersion.minor, deviceAPIVersion.patch);
+        gpu->deviceId = physicalDeviceProperties.properties.deviceID;
 
         ffStrbufInitS(&gpu->name, physicalDeviceProperties.properties.deviceName);
 
@@ -204,19 +204,14 @@ static const char* detectVulkan(FFVulkanResult* result)
         //No way to detect those using vulkan
         gpu->coreCount = FF_GPU_CORE_COUNT_UNSET;
         gpu->temperature = FF_GPU_TEMP_UNSET;
+        gpu->frequency = FF_GPU_FREQUENCY_UNSET;
 
     next:
         continue;
     }
 
-    //If the highest device version is lower than the instance version, use it as our vulkan version
-    //otherwise the instance version is the vulkan version
-    if(ffVersionCompare(&instanceVersion, &maxDeviceApiVersion) > 0)
-        ffVersionToPretty(&maxDeviceApiVersion, &result->apiVersion);
-    else
-        ffVersionToPretty(&instanceVersion, &result->apiVersion);
-
-    //Use the highest device conformace version as our conformance version
+    ffVersionToPretty(&instanceVersion, &result->instanceVersion);
+    ffVersionToPretty(&maxDeviceApiVersion, &result->apiVersion);
     ffVersionToPretty(&maxDeviceConformanceVersion, &result->conformanceVersion);
 
     ffvkDestroyInstance(vkInstance, NULL);
@@ -228,22 +223,21 @@ static const char* detectVulkan(FFVulkanResult* result)
 FFVulkanResult* ffDetectVulkan(void)
 {
     static FFVulkanResult result;
-    static bool init = false;
 
-    if(init)
-        return &result;
-    init = true;
+    if (result.gpus.elementSize == 0)
+    {
+        ffStrbufInit(&result.driver);
+        ffStrbufInit(&result.apiVersion);
+        ffStrbufInit(&result.conformanceVersion);
+        ffStrbufInit(&result.instanceVersion);
+        ffListInit(&result.gpus, sizeof(FFGPUResult));
 
-    ffStrbufInit(&result.driver);
-    ffStrbufInit(&result.apiVersion);
-    ffStrbufInit(&result.conformanceVersion);
-    ffListInit(&result.gpus, sizeof(FFGPUResult));
-
-    #ifdef FF_HAVE_VULKAN
-        result.error = detectVulkan(&result);
-    #else
-        result.error = "fastfetch was compiled without vulkan support";
-    #endif
+        #ifdef FF_HAVE_VULKAN
+            result.error = detectVulkan(&result);
+        #else
+            result.error = "fastfetch was compiled without vulkan support";
+        #endif
+    }
 
     return &result;
 }

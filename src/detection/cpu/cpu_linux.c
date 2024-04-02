@@ -4,10 +4,12 @@
 #include "common/properties.h"
 #include "detection/temps/temps_linux.h"
 #include "util/mallocHelper.h"
+#include "util/stringUtils.h"
 
 #include <sys/sysinfo.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <ctype.h>
 
 #ifdef __ANDROID__
 #include "common/settings.h"
@@ -15,7 +17,10 @@
 static void detectAndroid(FFCPUResult* cpu)
 {
     if (cpu->name.length == 0)
+    {
         ffSettingsGetAndroidProperty("ro.soc.model", &cpu->name);
+        ffStrbufClear(&cpu->vendor); // We usually detect the vendor of CPU core as ARM, but instead we want the vendor of SOC
+    }
     if (cpu->vendor.length == 0)
     {
         if (!ffSettingsGetAndroidProperty("ro.soc.manufacturer", &cpu->vendor))
@@ -33,6 +38,10 @@ static const char* parseCpuInfo(FFCPUResult* cpu, FFstrbuf* physicalCoresBuffer,
     FF_AUTO_FREE char* line = NULL;
     size_t len = 0;
 
+    #ifdef __aarch64__
+    FF_STRBUF_AUTO_DESTROY implementer = ffStrbufCreate();
+    #endif
+
     while(getline(&line, &len, cpuinfo) != -1)
     {
         //Stop after the first CPU
@@ -46,39 +55,103 @@ static const char* parseCpuInfo(FFCPUResult* cpu, FFstrbuf* physicalCoresBuffer,
             ffParsePropLine(line, "cpu MHz :", cpuMHz) ||
             ffParsePropLine(line, "isa :", cpuIsa) ||
             ffParsePropLine(line, "uarch :", cpuUarch) ||
+
+            #ifdef __aarch64__
+            (cpu->vendor.length == 0 && ffParsePropLine(line, "CPU implementer :", &implementer)) ||
+            #endif
+
             (cpu->name.length == 0 && ffParsePropLine(line, "Hardware :", &cpu->name)) || //For Android devices
             (cpu->name.length == 0 && ffParsePropLine(line, "cpu     :", &cpu->name)) || //For POWER
             (cpu->name.length == 0 && ffParsePropLine(line, "cpu model               :", &cpu->name)) //For MIPS
         );
     }
 
+    #ifdef __aarch64__
+    // https://github.com/util-linux/util-linux/blob/2cd89de14549d2b2c079a4f8b73f75500d229fee/sys-utils/lscpu-arm.c#L286
+    if (cpu->vendor.length == 0 && implementer.length > 2 /* 0xX */)
+    {
+        uint32_t implId = (uint32_t) strtoul(implementer.chars, NULL, 16);
+        switch (implId)
+        {
+        case 0x41: ffStrbufSetStatic(&cpu->vendor, "ARM"); break;
+        case 0x42: ffStrbufSetStatic(&cpu->vendor, "Broadcom"); break;
+        case 0x48: ffStrbufSetStatic(&cpu->vendor, "HiSilicon"); break;
+        case 0x4e: ffStrbufSetStatic(&cpu->vendor, "Nvidia"); break;
+        case 0x51: ffStrbufSetStatic(&cpu->vendor, "Qualcomm"); break;
+        case 0x53: ffStrbufSetStatic(&cpu->vendor, "Samsung"); break;
+        case 0x61: ffStrbufSetStatic(&cpu->vendor, "Apple"); break;
+        case 0x69: ffStrbufSetStatic(&cpu->vendor, "Intel"); break;
+        }
+    }
+    #endif
+
     return NULL;
 }
 
-static double getGHz(const char* file)
+static double getFrequency(FFstrbuf* basePath, const char* cpuinfoFileName, const char* scalingFileName, FFstrbuf* buffer)
 {
-    FF_STRBUF_AUTO_DESTROY content = ffStrbufCreate();
-    if(ffAppendFileBuffer(file, &content))
+    uint32_t baseLen = basePath->length;
+    ffStrbufAppendS(basePath, cpuinfoFileName);
+    bool ok = ffReadFileBuffer(basePath->chars, buffer);
+    ffStrbufSubstrBefore(basePath, baseLen);
+    if (ok)
+        return ffStrbufToDouble(buffer) / 1e6;
+
+    if (scalingFileName)
     {
-        double herz = ffStrbufToDouble(&content);
-
-        //ffStrbufToDouble failed
-        if(herz != herz)
-            return 0;
-
-        herz /= 1000.0; //to MHz
-        return herz / 1000.0; //to GHz
+        ffStrbufAppendS(basePath, scalingFileName);
+        ok = ffReadFileBuffer(basePath->chars, buffer);
+        ffStrbufSubstrBefore(basePath, baseLen);
+        if (ok)
+            return ffStrbufToDouble(buffer) / 1e6;
     }
-    return 0;
+
+    return 0.0/0.0;
 }
 
-static double getFrequency(const char* info, const char* scaling)
+static bool detectFrequency(FFCPUResult* cpu)
 {
-    double frequency = getGHz(info);
-    if(frequency > 0.0)
-        return frequency;
+    FF_STRBUF_AUTO_DESTROY path = ffStrbufCreateS("/sys/devices/system/cpu/cpufreq/");
+    FF_AUTO_CLOSE_DIR DIR* dir = opendir(path.chars);
+    if (!dir) return false;
 
-    return getGHz(scaling);
+    FF_STRBUF_AUTO_DESTROY buffer = ffStrbufCreate();
+    uint32_t baseLen = path.length;
+
+    struct dirent* entry;
+    while((entry = readdir(dir)) != NULL)
+    {
+        if (ffStrStartsWith(entry->d_name, "policy") && isdigit(entry->d_name[strlen("policy")]))
+        {
+            ffStrbufAppendS(&path, entry->d_name);
+            double fbase = getFrequency(&path, "/base_frequency", NULL, &buffer);
+            if (fbase == fbase)
+            {
+                if (cpu->frequencyBase == cpu->frequencyBase)
+                    cpu->frequencyBase = cpu->frequencyBase > fbase ? cpu->frequencyBase : fbase;
+                else
+                    cpu->frequencyBase = fbase;
+            }
+            double fmax = getFrequency(&path, "/cpuinfo_max_freq", "/scaling_max_freq", &buffer);
+            if (fmax == fmax)
+            {
+                if (cpu->frequencyMax == cpu->frequencyMax)
+                    cpu->frequencyMax = cpu->frequencyMax > fmax ? cpu->frequencyMax : fmax;
+                else
+                    cpu->frequencyMax = fmax;
+            }
+            double fmin = getFrequency(&path, "/cpuinfo_min_freq", "/scaling_min_freq", &buffer);
+            if (fmin == fmin)
+            {
+                if (cpu->frequencyMin == cpu->frequencyMin)
+                    cpu->frequencyMin = cpu->frequencyMin < fmin ? cpu->frequencyMin : fmin;
+                else
+                    cpu->frequencyMin = fmin;
+            }
+            ffStrbufSubstrBefore(&path, baseLen);
+        }
+    }
+    return true;
 }
 
 static double detectCPUTemp(void)
@@ -120,6 +193,44 @@ static void parseIsa(FFstrbuf* cpuIsa)
     }
 }
 
+void detectAsahi(FFCPUResult* cpu)
+{
+    // In Asahi Linux, reading /proc/device-tree/compatible gives
+    // information on the device model. It consists of 3 NUL terminated
+    // strings, the second of which gives the actual SoC model. But it
+    // is not the marketing name, i.e. for M2 there is "apple,t8112" in
+    // the compatible string.
+    if (cpu->name.length == 0 && ffStrbufEqualS(&cpu->vendor, "Apple"))
+    {
+        char content[32];
+        ssize_t length = ffReadFileData("/proc/device-tree/compatible", sizeof(content), content);
+        if (length <= 0) return;
+
+        // get the second NUL terminated string
+        char* modelName = memchr(content, '\0', (size_t) length) + 1;
+        if (modelName - content < length && ffStrStartsWith(modelName, "apple,t"))
+        {
+            // https://github.com/AsahiLinux/docs/wiki/Codenames
+            switch (strtoul(modelName + strlen("apple,t"), NULL, 10))
+            {
+                case 8103: ffStrbufSetStatic(&cpu->name, "Apple M1"); break;
+                case 6000: ffStrbufSetStatic(&cpu->name, "Apple M1 Pro"); break;
+                case 6001: ffStrbufSetStatic(&cpu->name, "Apple M1 Max"); break;
+                case 6002: ffStrbufSetStatic(&cpu->name, "Apple M1 Ultra"); break;
+                case 8112: ffStrbufSetStatic(&cpu->name, "Apple M2"); break;
+                case 6020: ffStrbufSetStatic(&cpu->name, "Apple M2 Pro"); break;
+                case 6021: ffStrbufSetStatic(&cpu->name, "Apple M2 Max"); break;
+                case 6022: ffStrbufSetStatic(&cpu->name, "Apple M2 Ultra"); break;
+                case 8122: ffStrbufSetStatic(&cpu->name, "Apple M3"); break;
+                case 6030: ffStrbufSetStatic(&cpu->name, "Apple M3 Pro"); break;
+                case 6031:
+                case 6034: ffStrbufSetStatic(&cpu->name, "Apple M3 Max"); break;
+                default: ffStrbufSetStatic(&cpu->name, "Apple Silicon"); break;
+            }
+        }
+    }
+}
+
 const char* ffDetectCPUImpl(const FFCPUOptions* options, FFCPUResult* cpu)
 {
     cpu->temperature = options->temp ? detectCPUTemp() : FF_CPU_TEMP_UNSET;
@@ -132,21 +243,12 @@ const char* ffDetectCPUImpl(const FFCPUOptions* options, FFCPUResult* cpu)
     const char* error = parseCpuInfo(cpu, &physicalCoresBuffer, &cpuMHz, &cpuIsa, &cpuUarch);
     if (error) return error;
 
-    cpu->coresPhysical = (uint16_t) ffStrbufToUInt(&physicalCoresBuffer, 1);
-
     cpu->coresLogical = (uint16_t) get_nprocs_conf();
     cpu->coresOnline = (uint16_t) get_nprocs();
+    cpu->coresPhysical = (uint16_t) ffStrbufToUInt(&physicalCoresBuffer, cpu->coresLogical);
 
-    #define BP "/sys/devices/system/cpu/cpufreq/policy0/"
-    if(ffPathExists(BP, FF_PATHTYPE_DIRECTORY))
-    {
-        cpu->frequencyMin = getFrequency(BP"cpuinfo_min_freq", BP"scaling_min_freq");
-        cpu->frequencyMax = getFrequency(BP"cpuinfo_max_freq", BP"scaling_max_freq");
-    }
-    else
-    {
-        cpu->frequencyMin = cpu->frequencyMax = ffStrbufToDouble(&cpuMHz) / 1000;
-    }
+    if (!detectFrequency(cpu) || cpu->frequencyBase != cpu->frequencyBase)
+        cpu->frequencyBase = ffStrbufToDouble(&cpuMHz) / 1000;
 
     if(cpuUarch.length > 0)
     {
@@ -167,17 +269,79 @@ const char* ffDetectCPUImpl(const FFCPUOptions* options, FFCPUResult* cpu)
     detectAndroid(cpu);
     #endif
 
-    #ifdef __linux__
+    #if defined(__linux__) && defined(__aarch64__)
+    detectAsahi(cpu);
+    #endif
+
     if (cpu->name.length == 0)
     {
         FF_STRBUF_AUTO_DESTROY buffer = ffStrbufCreate();
-        if (!ffProcessAppendStdOut(&buffer, (char *const[]) { "lscpu", NULL }))
+        if (ffProcessAppendStdOut(&buffer, (char *const[]) { "lscpu", NULL }) == NULL)
         {
-            ffParsePropLines(buffer.chars, "Model name:", &cpu->name);
-            if (ffStrbufEqualS(&cpu->name, "-")) ffStrbufClear(&cpu->name);
+            char* pstart = buffer.chars;
+
+            if (cpu->vendor.length == 0)
+            {
+                pstart = strstr(pstart, "Vendor ID:");
+                if (pstart)
+                {
+                    pstart += strlen("Vendor ID:");
+                    while (isspace(*pstart)) ++pstart;
+                    if (*pstart)
+                    {
+                        char* pend = strchr(pstart, '\n');
+                        if (pend != NULL)
+                            ffStrbufAppendNS(&cpu->vendor, (uint32_t) (pend - pstart), pstart);
+                        else
+                        {
+                            ffStrbufAppendS(&cpu->vendor, pstart);
+                        }
+                        pstart = pend + 1;
+                        if (pstart >= buffer.chars + buffer.length)
+                            return NULL;
+                    }
+                }
+                else
+                {
+                    pstart = buffer.chars;
+                }
+            }
+
+            while ((pstart = strstr(pstart, "Model name:")))
+            {
+                pstart += strlen("Model name:");
+                while (isspace(*pstart)) ++pstart;
+                if (*pstart == '\0')
+                    break;
+
+                if (cpu->name.length > 0)
+                    ffStrbufAppendS(&cpu->name, " + ");
+
+                if (*pstart == '-')
+                {
+                    if (cpu->vendor.length > 0)
+                        ffStrbufAppend(&cpu->name, &cpu->vendor);
+                    else
+                        ffStrbufAppendS(&cpu->name, "Unknown");
+                    ++pstart;
+                    continue;
+                }
+
+                char* pend = strchr(pstart, '\n');
+                if (pend != NULL)
+                    ffStrbufAppendNS(&cpu->name, (uint32_t) (pend - pstart), pstart);
+                else
+                {
+                    ffStrbufAppendS(&cpu->name, pstart);
+                    break;
+                }
+
+                pstart = pend + 1;
+                if (pstart >= buffer.chars + buffer.length)
+                    return NULL;
+            }
         }
     }
-    #endif
 
     return NULL;
 }

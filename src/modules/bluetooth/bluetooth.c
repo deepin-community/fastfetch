@@ -1,3 +1,4 @@
+#include "common/percent.h"
 #include "common/printing.h"
 #include "common/jsonconfig.h"
 #include "detection/bluetooth/bluetooth.h"
@@ -11,24 +12,32 @@ static void printDevice(FFBluetoothOptions* options, const FFBluetoothResult* de
     if(options->moduleArgs.outputFormat.length == 0)
     {
         ffPrintLogoAndKey(FF_BLUETOOTH_MODULE_NAME, index, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT);
-        ffStrbufWriteTo(&device->name, stdout);
 
-        if(device->battery > 0)
-            printf(" (%d%%)", device->battery);
+        FF_STRBUF_AUTO_DESTROY buffer = ffStrbufCreateCopy(&device->name);
 
-        if(!device->connected)
-            puts(" [disconnected]");
-        else
-            putchar('\n');
+        if (device->battery > 0 && device->battery <= 100)
+        {
+            if (buffer.length)
+                ffStrbufAppendC(&buffer, ' ');
+            ffPercentAppendNum(&buffer, device->battery, options->percent, buffer.length > 0);
+        }
+
+        if (!device->connected)
+            ffStrbufAppendS(&buffer, " [disconnected]");
+
+        ffStrbufPutTo(&buffer, stdout);
     }
     else
     {
-        ffPrintFormat(FF_BLUETOOTH_MODULE_NAME, index, &options->moduleArgs, FF_BLUETOOTH_NUM_FORMAT_ARGS, (FFformatarg[]) {
+        FF_STRBUF_AUTO_DESTROY percentageStr = ffStrbufCreate();
+        ffPercentAppendNum(&percentageStr, device->battery, options->percent, false);
+
+        FF_PRINT_FORMAT_CHECKED(FF_BLUETOOTH_MODULE_NAME, index, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_BLUETOOTH_NUM_FORMAT_ARGS, ((FFformatarg[]) {
             {FF_FORMAT_ARG_TYPE_STRBUF, &device->name},
             {FF_FORMAT_ARG_TYPE_STRBUF, &device->address},
             {FF_FORMAT_ARG_TYPE_STRBUF, &device->type},
-            {FF_FORMAT_ARG_TYPE_UINT8, &device->battery}
-        });
+            {FF_FORMAT_ARG_TYPE_STRBUF, &percentageStr}
+        }));
     }
 }
 
@@ -39,7 +48,7 @@ void ffPrintBluetooth(FFBluetoothOptions* options)
 
     if(error)
     {
-        ffPrintError(FF_BLUETOOTH_MODULE_NAME, 0, &options->moduleArgs, "%s", error);
+        ffPrintError(FF_BLUETOOTH_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "%s", error);
     }
     else
     {
@@ -55,7 +64,7 @@ void ffPrintBluetooth(FFBluetoothOptions* options)
 
         if(filtered.length == 0)
         {
-            ffPrintError(FF_BLUETOOTH_MODULE_NAME, 0, &options->moduleArgs, "No bluetooth devices found");
+            ffPrintError(FF_BLUETOOTH_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "No bluetooth devices found");
         }
 
         for(uint32_t i = 0; i < filtered.length; i++)
@@ -86,6 +95,9 @@ bool ffParseBluetoothCommandOptions(FFBluetoothOptions* options, const char* key
         return true;
     }
 
+    if (ffPercentParseCommandOptions(key, subKey, value, &options->percent))
+        return true;
+
     return false;
 }
 
@@ -108,7 +120,10 @@ void ffParseBluetoothJsonObject(FFBluetoothOptions* options, yyjson_val* module)
             continue;
         }
 
-        ffPrintError(FF_BLUETOOTH_MODULE_NAME, 0, &options->moduleArgs, "Unknown JSON key %s", key);
+        if (ffPercentParseJsonObject(key, val, &options->percent))
+            continue;
+
+        ffPrintError(FF_BLUETOOTH_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "Unknown JSON key %s", key);
     }
 }
 
@@ -121,6 +136,8 @@ void ffGenerateBluetoothJsonConfig(FFBluetoothOptions* options, yyjson_mut_doc* 
 
     if (options->showDisconnected != defaultOptions.showDisconnected)
         yyjson_mut_obj_add_bool(doc, module, "showDisconnected", options->showDisconnected);
+
+    ffPercentGenerateJsonConfig(doc, module, defaultOptions.percent, options->percent);
 }
 
 void ffGenerateBluetoothJsonResult(FF_MAYBE_UNUSED FFBluetoothOptions* options, yyjson_mut_doc* doc, yyjson_mut_val* module)
@@ -158,12 +175,12 @@ void ffGenerateBluetoothJsonResult(FF_MAYBE_UNUSED FFBluetoothOptions* options, 
 
 void ffPrintBluetoothHelpFormat(void)
 {
-    ffPrintModuleFormatHelp(FF_BLUETOOTH_MODULE_NAME, "{1} ({4})", FF_BLUETOOTH_NUM_FORMAT_ARGS, (const char* []) {
+    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_BLUETOOTH_MODULE_NAME, "{1} ({4})", FF_BLUETOOTH_NUM_FORMAT_ARGS, ((const char* []) {
         "Name",
         "Address",
         "Type",
         "Battery percentage"
-    });
+    }));
 }
 
 void ffInitBluetoothOptions(FFBluetoothOptions* options)
@@ -181,6 +198,7 @@ void ffInitBluetoothOptions(FFBluetoothOptions* options)
     );
     ffOptionInitModuleArg(&options->moduleArgs);
     options->showDisconnected = false;
+    options->percent = (FFColorRangeConfig) { 50, 20 };
 }
 
 void ffDestroyBluetoothOptions(FFBluetoothOptions* options)

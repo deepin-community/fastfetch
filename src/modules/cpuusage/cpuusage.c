@@ -1,6 +1,6 @@
 #include "common/printing.h"
 #include "common/jsonconfig.h"
-#include "common/bar.h"
+#include "common/percent.h"
 #include "detection/cpuusage/cpuusage.h"
 #include "modules/cpuusage/cpuusage.h"
 #include "util/stringUtils.h"
@@ -15,7 +15,7 @@ void ffPrintCPUUsage(FFCPUUsageOptions* options)
 
     if(error)
     {
-        ffPrintError(FF_CPUUSAGE_DISPLAY_NAME, 0, &options->moduleArgs, "%s", error);
+        ffPrintError(FF_CPUUSAGE_DISPLAY_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "%s", error);
         return;
     }
 
@@ -52,12 +52,12 @@ void ffPrintCPUUsage(FFCPUUsageOptions* options)
         if (!options->separate)
         {
             if(instance.config.display.percentType & FF_PERCENTAGE_TYPE_BAR_BIT)
-                ffAppendPercentBar(&str, avgValue, 0, 50, 80);
+                ffPercentAppendBar(&str, avgValue, options->percent);
             if(instance.config.display.percentType & FF_PERCENTAGE_TYPE_NUM_BIT)
             {
                 if(str.length > 0)
                     ffStrbufAppendC(&str, ' ');
-                ffAppendPercentNum(&str, avgValue, 50, 80, str.length > 0);
+                ffPercentAppendNum(&str, avgValue, options->percent, str.length > 0);
             }
         }
         else
@@ -66,7 +66,7 @@ void ffPrintCPUUsage(FFCPUUsageOptions* options)
             {
                 if(str.length > 0)
                     ffStrbufAppendC(&str, ' ');
-                ffAppendPercentNum(&str, *percent, 50, 80, false);
+                ffPercentAppendNum(&str, *percent, options->percent, false);
             }
         }
         ffStrbufPutTo(&str, stdout);
@@ -74,18 +74,18 @@ void ffPrintCPUUsage(FFCPUUsageOptions* options)
     else
     {
         FF_STRBUF_AUTO_DESTROY avgStr = ffStrbufCreate();
-        ffAppendPercentNum(&avgStr, avgValue, 50, 80, false);
+        ffPercentAppendNum(&avgStr, avgValue, options->percent, false);
         FF_STRBUF_AUTO_DESTROY minStr = ffStrbufCreate();
-        ffAppendPercentNum(&minStr, minValue, 50, 80, false);
+        ffPercentAppendNum(&minStr, minValue, options->percent, false);
         FF_STRBUF_AUTO_DESTROY maxStr = ffStrbufCreate();
-        ffAppendPercentNum(&maxStr, maxValue, 50, 80, false);
-        ffPrintFormat(FF_CPUUSAGE_DISPLAY_NAME, 0, &options->moduleArgs, FF_CPUUSAGE_NUM_FORMAT_ARGS, (FFformatarg[]){
+        ffPercentAppendNum(&maxStr, maxValue, options->percent, false);
+        FF_PRINT_FORMAT_CHECKED(FF_CPUUSAGE_DISPLAY_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_CPUUSAGE_NUM_FORMAT_ARGS, ((FFformatarg[]){
             {FF_FORMAT_ARG_TYPE_STRBUF, &avgStr},
             {FF_FORMAT_ARG_TYPE_STRBUF, &maxStr},
             {FF_FORMAT_ARG_TYPE_UINT, &maxIndex},
             {FF_FORMAT_ARG_TYPE_STRBUF, &minStr},
             {FF_FORMAT_ARG_TYPE_UINT, &minIndex},
-        });
+        }));
     }
 }
 
@@ -101,6 +101,9 @@ bool ffParseCPUUsageCommandOptions(FFCPUUsageOptions* options, const char* key, 
         options->separate = ffOptionParseBoolean(value);
         return true;
     }
+
+    if (ffPercentParseCommandOptions(key, subKey, value, &options->percent))
+        return true;
 
     return false;
 }
@@ -124,7 +127,10 @@ void ffParseCPUUsageJsonObject(FFCPUUsageOptions* options, yyjson_val* module)
             continue;
         }
 
-        ffPrintError(FF_CPUUSAGE_MODULE_NAME, 0, &options->moduleArgs, "Unknown JSON key %s", key);
+        if (ffPercentParseJsonObject(key, val, &options->percent))
+            continue;
+
+        ffPrintError(FF_CPUUSAGE_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "Unknown JSON key %s", key);
     }
 }
 
@@ -137,6 +143,8 @@ void ffGenerateCPUUsageJsonConfig(FFCPUUsageOptions* options, yyjson_mut_doc* do
 
     if (options->separate != defaultOptions.separate)
         yyjson_mut_obj_add_bool(doc, module, "separate", options->separate);
+
+    ffPercentGenerateJsonConfig(doc, module, defaultOptions.percent, options->percent);
 }
 
 void ffGenerateCPUUsageJsonResult(FF_MAYBE_UNUSED FFCPUUsageOptions* options, yyjson_mut_doc* doc, yyjson_mut_val* module)
@@ -158,13 +166,13 @@ void ffGenerateCPUUsageJsonResult(FF_MAYBE_UNUSED FFCPUUsageOptions* options, yy
 
 void ffPrintCPUUsageHelpFormat(void)
 {
-    ffPrintModuleFormatHelp(FF_CPUUSAGE_MODULE_NAME, "{1}", FF_CPUUSAGE_NUM_FORMAT_ARGS, (const char* []) {
+    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_CPUUSAGE_MODULE_NAME, "{1}", FF_CPUUSAGE_NUM_FORMAT_ARGS, ((const char* []) {
         "CPU usage (percentage, average)",
         "CPU usage (percentage, maximum)",
         "CPU core index of maximum usage",
         "CPU usage (percentage, minimum)",
         "CPU core index of minimum usage",
-    });
+    }));
 }
 
 void ffInitCPUUsageOptions(FFCPUUsageOptions* options)
@@ -182,6 +190,7 @@ void ffInitCPUUsageOptions(FFCPUUsageOptions* options)
     );
     ffOptionInitModuleArg(&options->moduleArgs);
     options->separate = false;
+    options->percent = (FFColorRangeConfig) { 50, 80 };
 }
 
 void ffDestroyCPUUsageOptions(FFCPUUsageOptions* options)

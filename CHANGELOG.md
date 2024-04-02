@@ -1,3 +1,230 @@
+# 2.8.10
+
+Changes:
+* Use MS-DOS device name as mountFrom result, instead of useless GUID volume name (Windows, Disk)
+* Some adjustments to Terminal detection (Terminal, Windows)
+    * Don't pretty print CMD
+    * Print conhost as Windows Console
+    * Don't detect `wininit` as Terminal
+
+Bugfixes:
+* Don't display 0.00 GHz (CPU, FreeBSD)
+* Don't detect manufactor of Qualcomm as ARM (CPU, Android)
+* Ignore `chezmoi` (Terminal, Linux)
+* Trim trailing possible whitespaces (PublicIP)
+* Fix detection compatibility for KDE 6 (Font, Linux)
+* Always use Metal API to detect vmem size (GPU, macOS)
+
+Features:
+* Improve stability; print more useful error message; avoid misuse (PublicIP / Weather)
+
+Logo:
+* Fix color of Arco Linux
+
+# 2.8.9
+
+Bugfixes:
+* Don't detect `SessionLeader` as terminal, actually (Terminal, Linux)
+* Fix blurry chafa result when specifying both width and height (#757, Logo)
+
+Features:
+* Support new MacBook Air (Host, macOS)
+* Distinguish min frequency and base frequency (CPU)
+
+Logo:
+* Fix proxmox
+
+# 2.8.8
+
+Bugfixes:
+* Fix old fish version compatibility (#744)
+* Fix truncated texts in `--help format` (#745)
+* Fix old vulkan-header and libdrm library compatibility (#748, Linux)
+* Fix possible segfaults in `--help *-format` (#749)
+* Fix invalid resolution detection when using libdrm (Linux, Display)
+* Fix segfault when `/sys/devices/system/cpu/cpufreq/` doesn't exist (#750, CPU, Linux)
+* Don't detect `SessionLeader` as terminal (Terminal, Linux)
+* Fix detection of client IP (Users, Linux)
+
+# 2.8.7
+
+Bugfixes:
+* Fix max CPU frequency detection for some cases (CPU, Linux)
+* Fix some memory leaks
+* Fix ddcutil 2.1 compatibility (Brightness, Linux)
+* Workaround `permission denied` error when reading `/proc/uptime` (Uptime, Android)
+
+Features:
+* Support zellij version detection (Linux, Terminal)
+
+Logo:
+* Fix PostMarketOS
+
+# 2.8.6
+
+Changes:
+* Due to newly introduced configs, JSONC option `{ "temperatureUnit": "C" }` has been changed to `{ "temp": { "unit": "C" } }`
+
+Bugfixes:
+* Fix incorrect GPU name detection for Intel iGPU on Linux (#736, GPU, Linux)
+
+Features:
+* Support additional temperature formatting options (#737)
+    * `{ "temp": { "ndigits": 1 } }`
+    * `{ "temp": { "color": { "green": "green", "yellow": "yellow", "red": "red" } } }`
+* Support specifying custom `pci.ids` path for Linux (GPU, Linux)
+* Support warp-linux terminal version & terminal font detection (Terminal, Linux)
+
+# 2.8.5
+
+Bugfixes:
+* Fix uninitialized variables
+
+# 2.8.4
+
+Bugfixes:
+* Fix segfault if we fail to find `Vendor ID` in `lscpu` (#718, CPU, Linux)
+* Fix multi-device bcachefs filesystem compatibility (#731, Disk, Linux)
+
+Features:
+* Support portable Windows Terminal settings (#720, Terminal, Windows)
+* Support `--color-block-width` and `--color-block-range` (#721, Colors)
+* Support `--diskio-detect-total` to show total bytes read/written (DiskIO)
+* Support `--netio-detect-total` to show total bytes received/sent (NetIO)
+* Support `--packages-disabled` to disable specified package manager (#729, Packages)
+* Support `--display-order` to sort multiple displays in a specific order (Display)
+* Support `--display-compact-type original-with-refresh-rate` to show refresh rates in compact (oneline) mode (Display)
+
+# 2.8.3
+
+Bugfixes:
+* Fix GPU name detection for AMD graphic cards (GPU, Linux / FreeBSD)
+
+# 2.8.2
+
+Changes:
+* The linux binaries are now built with glibc 2.35, which means they no longer support Debian 11 and Ubuntu 20.04. Users using these distros may download the artifacts `fastfetch-linux-old` from GitHub Actions.
+
+Features:
+* Rewrite GPU module, drop libpci dependency (GPU, Linux)
+* Detect marketing name of Apple Silicon CPUs for asahi linux (CPU, Linux)
+* Add new module `Camera`, which prints the name and resolution of connected cameras
+
+Bugfixes:
+* Fix compatibility with packages installed by flatpak (Terminal, Linux)
+* Don't show an empty battery if no battery is detected (macOS, Battery)
+* Don't show `not connected` if no power adapter is found (macOS / Linux, PowerAdapter)
+* Make format of battery status be consistent with other platforms (Linux, Battery)
+
+Logo:
+* Print Asahi logo in asahi linux (Logo, Linux)
+* Add Asahi2, z/OS, Tatra, PikaOS
+
+# 2.7.1
+
+Features:
+* Config presets in app folder now work with symlinks
+
+Bugfixes:
+* Fix a possible segfault when detecting terminal (Terminal, Linux)
+
+# 2.7.0
+
+Features:
+* Add new module `TerminalTheme`, which prints the foreground and background color of the current terminal window. Currently doesn't work on Windows.
+* Allow command substitution when expanding paths. For example, now it's possible to use `"source": "$(ls ~/path/to/images/*.png | shuf -n 1)"` in JSONC config file to randomly choose an image to display. (#698)
+* Use native methods instead of pciutils to detect GPUs in FreeBSD. (GPU, FreeBSD)
+
+Bugfixes:
+* Fix text formatting (Wifi, Linux)
+* Fix terminal detection in some cases (Terminal)
+* Remove trailing `\0` in JSON results (FreeBSD)
+* Fix uninitialized variables (GPU, Linux)
+* Fix a possible segfault (OpenCL)
+
+Logo:
+* Add ASCII logos for fedora immutable variants (#700)
+
+# 2.6.3
+
+Bugfixes:
+* Fix module not working (Bluetooth)
+
+# 2.6.2
+
+Bugfixes:
+* Fix building for GCC in Windows (Windows)
+
+# 2.6.1
+
+Features:
+* Improve xonsh shell detection (Shell)
+* Support colored percentage values (Bluetooth / Gamepad / Sound)
+* Add `--<module>-percent-[green|yellow]` options to specify threshold of percentage colors
+    * eg. `--disk-percent-green 20 --disk-percent-yellow 50` will show green if disk usage is less than 20%, yellow if disk usage is less then 50%, and red otherwise.
+* Add `--percent-color-[green|yellow|red]` options to specify color of different percent value states.
+    * eg. `--percent-color-green blue` will show blue color if percent value falls in green state.
+* Improve Intel macbook support (macOS)
+
+Bugfixes:
+* Fix segfault in CPU module when running in aarch64 machine without `lscpu` installed (CPU, Linux)
+* Don't use `login` as terminal process (Terminal, Linux)
+* Silence warnings when building in 32bit machines.
+* Create sub folders when writing config file (#690)
+* Improve user specific locale detection; fix locale detection in Windows 7 (Locale)
+* Fix GPU type detection (GPU, macOS)
+
+# 2.6.0
+
+Changes:
+* Remove support of option `--battery-dir`. We detect a lot of things in `/sys/class/*` and only module `Battery` supports specifying a custom directory for some reason, which is weird.
+* Remove `--chassis-use-wmi` which is no longer used.
+
+Features:
+* Add `ENABLE_PROPRIETARY_GPU_DRIVER_API` cmake option to disable using of proprietary GPU driver APIs (GPU)
+* Support wallpaper detection for macOS Sonoma (Wallpaper, macOS)
+* Support power adapter detection for Asahi Linux (PowerAdapter, Linux)
+* Support battery serial number and manufacturer date detection (Battery)
+* Support host serial number and UUID detection (Host)
+* Support battery level detection for gamepads where possible (Gamepad)
+* Support maximum CPU clock detection. Previously base clock was printed (CPU, Windows)
+* Support manufacture date and serial number detection for physical monitors (Monitor)
+* Support ash (default shell of BusyBox) version detection (Shell, Linux)
+* Sound module in FreeBSD now uses native `ioctl`s. Pulseaudio dependency is no longer used.
+* Locale module in Windows now prints the same format as in Linux and other posix systems.
+
+Bugfixes:
+* Fix overall memory leaks (macOS)
+* Remove trailing `\0` in JSON results (FreeBSD)
+* Fix physical monitor detection with Nvidia drivers (Monitor, Linux)
+* Don't print llvmpipe in vulkan module (Vulkan)
+* Fix system yyjson usage in `fastfetch.c`. Previously embedded `3rdparty/yyjson/yyjson.h` was used in `fastfetch.c` even if `ENABLE_SYSTEM_YYJSON` was set (CMake)
+* Fix locale module printing unexpected results in specific environments (Locale)
+* Fix battery temperature detection in Windows. Note only smart batteries report temperatures but few laptops uses smart battery (Battery, Windows)
+* Print device name if no backlight name is available, so we don't print empty parentheses (Brightness, FreeBSD)
+
+# 2.5.0
+
+Changes:
+* `--gpu-use-nvml` has been renamed to `--gpu-driver-specific` due to using of `IGCL` and `AGS`
+* We now detect external partitions more conservatively in Linux. USB partitions will not be detected as external always ( eg. The Linux kernel itself is installed in a USB drive )
+
+Features:
+* Support more authentication type detection for macOS Sonoma (Wifi, macOS)
+* Default preset names to `.jsonc`. For example, `fastfetch -c all` will load `presets/all.jsonc` (#666)
+* Use Intel Graphics Control Library (IGCL) to detect more GPU information. Windows only (GPU, Windows)
+* Improve support of Asahi Linux (Brightness / CPU / GPU / Disk, Linux)
+* Support more properties of physical disks (PhysicalDisk)
+* Support SSD temperature detection with `--physicaldisk-temp` (PhysicalDisk)
+* Support partition label detection (Disk, FreeBSD)
+* Support platform specific graphic API version detection (GPU, macOS / Windows)
+
+Bugfixes:
+* Fix Windows partition detection for WSL2 (Linux, Disk)
+* Fix Btrfs subvolumes being detected as external partitions some times (Linux, Disk)
+* Fix battery cycle counts in some places (Battery)
+* Fix CodeWhisperer compatibility (#676, Terminal, macOS)
+
 # 2.4.0
 
 **We are deprecating flags based config files (will be removed in v3.0.0). We suggest you migrate to json based config files.** One may use `-c /path/to/config.conf --gen-config` to migrate existing flag based config files.

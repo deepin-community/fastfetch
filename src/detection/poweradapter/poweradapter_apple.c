@@ -2,51 +2,40 @@
 #include "poweradapter.h"
 #include "util/apple/cf_helpers.h"
 
-#include <IOKit/IOKitLib.h>
+#include <IOKit/ps/IOPowerSources.h>
+#include <IOKit/ps/IOPSKeys.h>
 
-const char* ffDetectPowerAdapterImpl(FFlist* results)
+const char* ffDetectPowerAdapter(FFlist* results)
 {
-    io_iterator_t iterator;
-    if(IOServiceGetMatchingServices(MACH_PORT_NULL, IOServiceMatching("AppleSmartBattery"), &iterator) != kIOReturnSuccess)
-        return "IOServiceGetMatchingServices() failed";
-
-    io_registry_entry_t registryEntry;
-    while((registryEntry = IOIteratorNext(iterator)) != 0)
+    FF_CFTYPE_AUTO_RELEASE CFDictionaryRef details = IOPSCopyExternalPowerAdapterDetails();
+    if (details && CFDictionaryContainsKey(details, CFSTR(kIOPSPowerAdapterWattsKey)))
     {
-        CFMutableDictionaryRef properties;
-        if(IORegistryEntryCreateCFProperties(registryEntry, &properties, kCFAllocatorDefault, kNilOptions) != kIOReturnSuccess)
-        {
-            IOObjectRelease(registryEntry);
-            continue;
-        }
-
         FFPowerAdapterResult* adapter = ffListAdd(results);
 
         ffStrbufInit(&adapter->name);
         ffStrbufInit(&adapter->description);
         ffStrbufInit(&adapter->manufacturer);
         ffStrbufInit(&adapter->modelName);
-        adapter->watts = FF_POWERADAPTER_UNSET;
+        ffStrbufInit(&adapter->serial);
+        adapter->watts = 0;
 
-        CFDictionaryRef adapterDict;
-        if(!ffCfDictGetDict(properties, CFSTR("AdapterDetails"), &adapterDict))
+        ffCfDictGetString(details, CFSTR(kIOPSNameKey), &adapter->name);
+        if (ffCfDictGetString(details, CFSTR("Model"), &adapter->modelName) != NULL)
         {
-            if (ffCfDictGetInt(adapterDict, CFSTR("Watts"), &adapter->watts))
-            {
-                adapter->watts = FF_POWERADAPTER_NOT_CONNECTED;
-                continue;
-            }
-            ffCfDictGetString(adapterDict, CFSTR("Name"), &adapter->name);
-            ffCfDictGetString(adapterDict, CFSTR("Description"), &adapter->description);
-            ffCfDictGetString(adapterDict, CFSTR("Manufacturer"), &adapter->manufacturer);
-            ffCfDictGetString(adapterDict, CFSTR("Model"), &adapter->modelName);
+            int adapterId;
+            if (ffCfDictGetInt(details, CFSTR(kIOPSPowerAdapterIDKey), &adapterId) == 0)
+                ffStrbufSetF(&adapter->modelName, "%d", adapterId);
         }
-
-        CFRelease(properties);
-        IOObjectRelease(registryEntry);
+        ffCfDictGetString(details, CFSTR("Manufacturer"), &adapter->manufacturer);
+        ffCfDictGetString(details, CFSTR("Description"), &adapter->description);
+        if (ffCfDictGetString(details, CFSTR("SerialString"), &adapter->serial) != NULL)
+        {
+            int serialNumber;
+            if (ffCfDictGetInt(details, CFSTR(kIOPSPowerAdapterSerialNumberKey), &serialNumber) == 0)
+                ffStrbufSetF(&adapter->serial, "%X", serialNumber);
+        }
+        ffCfDictGetInt(details, CFSTR(kIOPSPowerAdapterWattsKey), &adapter->watts);
     }
-
-    IOObjectRelease(iterator);
 
     return NULL;
 }

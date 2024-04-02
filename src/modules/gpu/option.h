@@ -3,6 +3,7 @@
 // This file will be included in "fastfetch.h", do NOT put unnecessary things here
 
 #include "common/option.h"
+#include "common/percent.h"
 
 typedef enum FFGPUType
 {
@@ -18,6 +19,8 @@ typedef struct FFGPUOptions
 
     FFGPUType hideType;
     bool temp;
-    bool useNvml;
+    bool driverSpecific;
     bool forceVulkan;
+    FFColorRangeConfig tempConfig;
+    FFColorRangeConfig percent;
 } FFGPUOptions;

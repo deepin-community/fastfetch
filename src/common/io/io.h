@@ -1,6 +1,7 @@
 #pragma once
 
 #include "util/FFstrbuf.h"
+#include "util/FFlist.h"
 
 #ifdef _WIN32
     #include <fileapi.h>
@@ -104,7 +105,7 @@ static inline bool ffPathExists(const char* path, FFPathType pathType)
 
     unsigned int mode = fileStat.st_mode & S_IFMT;
 
-    if(pathType & FF_PATHTYPE_FILE && mode == S_IFREG)
+    if(pathType & FF_PATHTYPE_FILE && mode != S_IFDIR)
         return true;
 
     if(pathType & FF_PATHTYPE_DIRECTORY && mode == S_IFDIR)
@@ -185,3 +186,18 @@ static inline bool wrapClosedir(HANDLE* pdir)
 }
 #endif
 #define FF_AUTO_CLOSE_DIR __attribute__((__cleanup__(wrapClosedir)))
+
+static inline bool ffSearchUserConfigFile(const FFlist* configDirs, const char* fileSubpath, FFstrbuf* result)
+{
+    // configDirs is a list of FFstrbufs include the trailing slash
+    FF_LIST_FOR_EACH(FFstrbuf, dir, *configDirs)
+    {
+        ffStrbufClear(result);
+        ffStrbufAppend(result, dir);
+        ffStrbufAppendS(result, fileSubpath);
+        if (ffPathExists(result->chars, FF_PATHTYPE_FILE))
+            return true;
+    }
+
+    return false;
+}

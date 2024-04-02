@@ -18,6 +18,14 @@ static void getExePath(FFPlatform* platform)
     DWORD exePathWLen = GetModuleFileNameW(NULL, exePathW, MAX_PATH);
     if (exePathWLen == 0 && exePathWLen >= MAX_PATH) return;
 
+    FF_AUTO_CLOSE_FD HANDLE hPath = CreateFileW(exePathW, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (hPath != INVALID_HANDLE_VALUE)
+    {
+        DWORD len = GetFinalPathNameByHandleW(hPath, exePathW, MAX_PATH, FILE_NAME_OPENED);
+        if (len > 0 && len < MAX_PATH)
+            exePathWLen = len;
+    }
+
     ffStrbufSetNWS(&platform->exePath, exePathWLen, exePathW);
     if (ffStrbufStartsWithS(&platform->exePath, "\\\\?\\"))
         ffStrbufSubstrAfter(&platform->exePath, 3);
@@ -32,8 +40,14 @@ static void getHomeDir(FFPlatform* platform)
         ffStrbufSetWS(&platform->homeDir, pPath);
         ffStrbufReplaceAllC(&platform->homeDir, '\\', '/');
         ffStrbufEnsureEndsWithC(&platform->homeDir, '/');
+        CoTaskMemFree(pPath);
     }
-    CoTaskMemFree(pPath);
+    else
+    {
+        ffStrbufSetS(&platform->homeDir, getenv("USERPROFILE"));
+        ffStrbufReplaceAllC(&platform->homeDir, '\\', '/');
+        ffStrbufEnsureEndsWithC(&platform->homeDir, '/');
+    }
 }
 
 static void getCacheDir(FFPlatform* platform)
@@ -44,13 +58,13 @@ static void getCacheDir(FFPlatform* platform)
         ffStrbufSetWS(&platform->cacheDir, pPath);
         ffStrbufReplaceAllC(&platform->cacheDir, '\\', '/');
         ffStrbufEnsureEndsWithC(&platform->cacheDir, '/');
+        CoTaskMemFree(pPath);
     }
     else
     {
         ffStrbufAppend(&platform->cacheDir, &platform->homeDir);
         ffStrbufAppendS(&platform->cacheDir, "AppData/Local/");
     }
-    CoTaskMemFree(pPath);
 }
 
 static void platformPathAddKnownFolder(FFlist* dirs, REFKNOWNFOLDERID folderId)
@@ -63,8 +77,8 @@ static void platformPathAddKnownFolder(FFlist* dirs, REFKNOWNFOLDERID folderId)
         ffStrbufEnsureEndsWithC(&buffer, '/');
         if (!ffListContains(dirs, &buffer, (void*) ffStrbufEqual))
             ffStrbufInitMove((FFstrbuf*) ffListAdd(dirs), &buffer);
+        CoTaskMemFree(pPath);
     }
-    CoTaskMemFree(pPath);
 }
 
 static void platformPathAddEnvSuffix(FFlist* dirs, const char* env, const char* suffix)
@@ -122,10 +136,16 @@ static void getDataDirs(FFPlatform* platform)
 
 static void getUserName(FFPlatform* platform)
 {
-    wchar_t buffer[128];
-    DWORD len = sizeof(buffer) / sizeof(*buffer);
-    if(GetUserNameW(buffer, &len))
-        ffStrbufSetWS(&platform->userName, buffer);
+    const char* userName = getenv("USERNAME");
+    if (ffStrSet(userName))
+        ffStrbufSetS(&platform->userName, userName);
+    else
+    {
+        wchar_t buffer[128];
+        DWORD len = sizeof(buffer) / sizeof(*buffer);
+        if(GetUserNameW(buffer, &len))
+            ffStrbufSetWS(&platform->userName, buffer);
+    }
 }
 
 static void getHostName(FFPlatform* platform)
@@ -172,13 +192,13 @@ static void getSystemReleaseAndVersion(FFPlatform* platform)
     switch (osVersion.dwPlatformId)
     {
     case VER_PLATFORM_WIN32s:
-        ffStrbufAppendS(&platform->systemName, "WIN32s");
+        ffStrbufSetStatic(&platform->systemName, "WIN32s");
         break;
     case VER_PLATFORM_WIN32_WINDOWS:
-        ffStrbufAppendS(&platform->systemName, "WIN32_WINDOWS");
+        ffStrbufSetStatic(&platform->systemName, "WIN32_WINDOWS");
         break;
     case VER_PLATFORM_WIN32_NT:
-        ffStrbufAppendS(&platform->systemName, "WIN32_NT");
+        ffStrbufSetStatic(&platform->systemName, "WIN32_NT");
         break;
     }
 }
@@ -191,25 +211,45 @@ static void getSystemArchitectureAndPageSize(FFPlatform* platform)
     switch(sysInfo.wProcessorArchitecture)
     {
         case PROCESSOR_ARCHITECTURE_AMD64:
-            ffStrbufAppendS(&platform->systemArchitecture, "x86_64");
+            ffStrbufSetStatic(&platform->systemArchitecture, "x86_64");
             break;
         case PROCESSOR_ARCHITECTURE_IA64:
-            ffStrbufAppendS(&platform->systemArchitecture, "ia64");
+            ffStrbufSetStatic(&platform->systemArchitecture, "ia64");
             break;
         case PROCESSOR_ARCHITECTURE_INTEL:
-            ffStrbufAppendS(&platform->systemArchitecture, "i686");
+            switch (sysInfo.wProcessorLevel)
+            {
+                case 4:
+                    ffStrbufSetStatic(&platform->systemArchitecture, "i486");
+                    break;
+                case 5:
+                    ffStrbufSetStatic(&platform->systemArchitecture, "i586");
+                    break;
+                case 6:
+                    ffStrbufSetStatic(&platform->systemArchitecture, "i686");
+                    break;
+                default:
+                    ffStrbufSetStatic(&platform->systemArchitecture, "i386");
+                    break;
+            }
             break;
         case PROCESSOR_ARCHITECTURE_ARM64:
-            ffStrbufAppendS(&platform->systemArchitecture, "aarch64");
+            ffStrbufSetStatic(&platform->systemArchitecture, "aarch64");
             break;
         case PROCESSOR_ARCHITECTURE_ARM:
-            ffStrbufAppendS(&platform->systemArchitecture, "arm");
+            ffStrbufSetStatic(&platform->systemArchitecture, "arm");
             break;
         case PROCESSOR_ARCHITECTURE_PPC:
-            ffStrbufAppendS(&platform->systemArchitecture, "ppc");
+            ffStrbufSetStatic(&platform->systemArchitecture, "ppc");
             break;
         case PROCESSOR_ARCHITECTURE_MIPS:
-            ffStrbufAppendS(&platform->systemArchitecture, "mips");
+            ffStrbufSetStatic(&platform->systemArchitecture, "mips");
+            break;
+        case PROCESSOR_ARCHITECTURE_ALPHA:
+            ffStrbufSetStatic(&platform->systemArchitecture, "alpha");
+            break;
+        case PROCESSOR_ARCHITECTURE_ALPHA64:
+            ffStrbufSetStatic(&platform->systemArchitecture, "alpha64");
             break;
         case PROCESSOR_ARCHITECTURE_UNKNOWN:
         default:

@@ -1,19 +1,15 @@
 #include "fastfetch.h"
 #include "common/commandoption.h"
-#include "common/printing.h"
-#include "common/parsing.h"
 #include "common/io/io.h"
-#include "common/time.h"
 #include "common/jsonconfig.h"
 #include "detection/version/version.h"
 #include "util/stringUtils.h"
-#include "logo/logo.h"
+#include "util/mallocHelper.h"
 #include "fastfetch_datatext.h"
 
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
-#include <inttypes.h>
 
 #ifdef WIN32
     #include "util/windows/getline.h"
@@ -134,7 +130,7 @@ static void printFullHelp()
     }
     yyjson_doc_free(doc);
 
-    puts("\n" FASTFETCH_DATATEXT_HELP);
+    puts("\n" FASTFETCH_DATATEXT_HELP_FOOTER);
 }
 
 static bool printSpecificCommandHelp(const char* command)
@@ -221,7 +217,22 @@ static bool printSpecificCommandHelp(const char* command)
 
                 yyjson_val* remarkKey = yyjson_obj_get(flagObj, "remark");
                 if (remarkKey)
-                    printf("%10s: %s\n", "Remark", yyjson_get_str(remarkKey));
+                {
+                    if (yyjson_is_str(remarkKey))
+                        printf("%10s: %s\n", "Remark", yyjson_get_str(remarkKey));
+                    else if (yyjson_is_arr(remarkKey) && yyjson_arr_size(remarkKey) > 0)
+                    {
+                        yyjson_val* remarkStr;
+                        size_t remarkIdx, remarkMax;
+                        yyjson_arr_foreach(remarkKey, remarkIdx, remarkMax, remarkStr)
+                        {
+                            if (remarkIdx == 0)
+                                printf("%10s: %s\n", "Remark", yyjson_get_str(remarkStr));
+                            else
+                                printf("            %s\n", yyjson_get_str(remarkStr));
+                        }
+                    }
+                }
 
                 return true;
             }
@@ -267,7 +278,7 @@ static void listConfigPaths(void)
     FF_LIST_FOR_EACH(FFstrbuf, folder, instance.state.platform.configDirs)
     {
         bool exists = false;
-        uint32_t length = folder->length + sizeof("fastfetch");
+        uint32_t length = folder->length + (uint32_t) strlen("fastfetch") + 1 /* trailing slash */;
         ffStrbufAppendS(folder, "fastfetch/config.jsonc");
         exists = ffPathExists(folder->chars, FF_PATHTYPE_FILE);
         if (!exists)
@@ -299,7 +310,7 @@ static void listModules(bool pretty)
         {
             ++count;
             if (pretty)
-                printf("%d)%s%-13s: %s\n", count, count > 9 ? " " : "  ", (*modules)->name, (*modules)->description);
+                printf("%d)%s%-14s: %s\n", count, count > 9 ? " " : "  ", (*modules)->name, (*modules)->description);
             else
                 printf("%s:%s\n", (*modules)->name, (*modules)->description);
         }
@@ -482,10 +493,8 @@ static void optionParseConfigFile(FFdata* data, const char* key, const char* val
     if(isJsonConfig ? parseJsoncFile(value) : parseConfigFile(data, value))
         return;
 
-    FF_STRBUF_AUTO_DESTROY absolutePath = ffStrbufCreateA(128);
-    if (ffPathExpandEnv(value, &absolutePath))
     {
-        bool success = isJsonConfig ? parseJsoncFile(absolutePath.chars) : parseConfigFile(data, absolutePath.chars);
+        bool success = isJsonConfig ? parseJsoncFile(value) : parseConfigFile(data, value);
 
         if(success)
             return;
@@ -493,6 +502,7 @@ static void optionParseConfigFile(FFdata* data, const char* key, const char* val
 
     //Try to load as a relative path
 
+    FF_STRBUF_AUTO_DESTROY absolutePath = ffStrbufCreateA(128);
     FF_LIST_FOR_EACH(FFstrbuf, path, instance.state.platform.dataDirs)
     {
         //We need to copy it, because if a config file loads a config file, the value of path must be unchanged
@@ -501,6 +511,11 @@ static void optionParseConfigFile(FFdata* data, const char* key, const char* val
         ffStrbufAppendS(&absolutePath, value);
 
         bool success = isJsonConfig ? parseJsoncFile(absolutePath.chars) : parseConfigFile(data, absolutePath.chars);
+        if (!success)
+        {
+            ffStrbufAppendS(&absolutePath, ".jsonc");
+            success = parseJsoncFile(absolutePath.chars);
+        }
 
         if(success)
             return;
@@ -514,6 +529,11 @@ static void optionParseConfigFile(FFdata* data, const char* key, const char* val
         ffStrbufAppendS(&absolutePath, value);
 
         bool success = isJsonConfig ? parseJsoncFile(absolutePath.chars) : parseConfigFile(data, absolutePath.chars);
+        if (!success)
+        {
+            ffStrbufAppendS(&absolutePath, ".jsonc");
+            success = parseJsoncFile(absolutePath.chars);
+        }
 
         if(success)
             return;
@@ -799,7 +819,10 @@ static void run(FFdata* data)
         ffPrintCommandOption(data, instance.state.resultDoc);
 
     if (instance.state.resultDoc)
+    {
         yyjson_mut_write_fp(stdout, instance.state.resultDoc, YYJSON_WRITE_INF_AND_NAN_AS_NULL | YYJSON_WRITE_PRETTY_TWO_SPACES, NULL, NULL);
+        putchar('\n');
+    }
     else
         ffFinish();
 }
@@ -821,7 +844,14 @@ static void writeConfigFile(FFdata* data, const FFstrbuf* filename)
         yyjson_mut_write_fp(stdout, doc, YYJSON_WRITE_INF_AND_NAN_AS_NULL | YYJSON_WRITE_PRETTY_TWO_SPACES, NULL, NULL);
     else
     {
-        if (yyjson_mut_write_file(filename->chars, doc, YYJSON_WRITE_INF_AND_NAN_AS_NULL | YYJSON_WRITE_PRETTY_TWO_SPACES, NULL, NULL))
+        size_t len;
+        FF_AUTO_FREE const char* str = yyjson_mut_write(doc, YYJSON_WRITE_INF_AND_NAN_AS_NULL | YYJSON_WRITE_PRETTY_TWO_SPACES, &len);
+        if (!str)
+        {
+            printf("Error: failed to generate config file\n");
+            exit(1);
+        }
+        if (ffWriteFileData(filename->chars, len, str))
             printf("The generated config file has been written in `%s`\n", filename->chars);
         else
         {

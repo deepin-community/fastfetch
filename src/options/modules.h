@@ -12,6 +12,7 @@ typedef struct FFOptionsModules
     FFBrightnessOptions brightness;
     FFCPUOptions cpu;
     FFCPUUsageOptions cpuUsage;
+    FFCameraOptions camera;
     FFChassisOptions chassis;
     FFColorsOptions colors;
     FFCommandOptions command;
@@ -48,9 +49,10 @@ typedef struct FFOptionsModules
     FFShellOptions shell;
     FFSoundOptions sound;
     FFSwapOptions swap;
-    FFTerminalFontOptions terminalFont;
     FFTerminalOptions terminal;
+    FFTerminalFontOptions terminalFont;
     FFTerminalSizeOptions terminalSize;
+    FFTerminalThemeOptions terminalTheme;
     FFThemeOptions theme;
     FFTitleOptions title;
     FFUptimeOptions uptime;
