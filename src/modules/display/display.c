@@ -4,7 +4,9 @@
 #include "modules/display/display.h"
 #include "util/stringUtils.h"
 
-#define FF_DISPLAY_NUM_FORMAT_ARGS 9
+#include <math.h>
+
+#define FF_DISPLAY_NUM_FORMAT_ARGS 15
 
 static int sortByNameAsc(FFDisplayResult* a, FFDisplayResult* b)
 {
@@ -89,52 +91,82 @@ void ffPrintDisplay(FFDisplayOptions* options)
         }
         else
         {
-            FF_PARSE_FORMAT_STRING_CHECKED(&key, &options->moduleArgs.key, 3, ((FFformatarg[]){
-                {FF_FORMAT_ARG_TYPE_UINT, &moduleIndex},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &result->name},
-                {FF_FORMAT_ARG_TYPE_STRING, displayType},
+            FF_PARSE_FORMAT_STRING_CHECKED(&key, &options->moduleArgs.key, 4, ((FFformatarg[]){
+                {FF_FORMAT_ARG_TYPE_UINT, &moduleIndex, "index"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &result->name, "name"},
+                {FF_FORMAT_ARG_TYPE_STRING, displayType, "type"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &options->moduleArgs.keyIcon, "icon"},
             }));
         }
+
+        FF_STRBUF_AUTO_DESTROY buffer = ffStrbufCreate();
+        double inch = sqrt(result->physicalWidth * result->physicalWidth + result->physicalHeight * result->physicalHeight) / 25.4;
 
         if(options->moduleArgs.outputFormat.length == 0)
         {
             ffPrintLogoAndKey(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY);
 
-            printf("%ix%i", result->width, result->height);
+            ffStrbufAppendF(&buffer, "%ix%i", result->width, result->height);
 
             if(result->refreshRate > 0)
             {
                 if(options->preciseRefreshRate)
-                    printf(" @ %gHz", ((int) (result->refreshRate * 1000 + 0.5)) / 1000.0);
+                    ffStrbufAppendF(&buffer, " @ %g Hz", ((int) (result->refreshRate * 1000 + 0.5)) / 1000.0);
                 else
-                    printf(" @ %iHz", (uint32_t) (result->refreshRate + 0.5));
+                    ffStrbufAppendF(&buffer, " @ %i Hz", (uint32_t) (result->refreshRate + 0.5));
             }
 
             if(
                 result->scaledWidth > 0 && result->scaledWidth != result->width &&
                 result->scaledHeight > 0 && result->scaledHeight != result->height)
-                printf(" (as %ix%i)", result->scaledWidth, result->scaledHeight);
+                ffStrbufAppendF(&buffer, " (as %ix%i)", result->scaledWidth, result->scaledHeight);
+
+            if (inch > 0)
+                ffStrbufAppendF(&buffer, " in %i″", (uint32_t) (inch + 0.5));
 
             if(result->type != FF_DISPLAY_TYPE_UNKNOWN)
-                fputs(result->type == FF_DISPLAY_TYPE_BUILTIN ? " [Built-in]" : " [External]", stdout);
+                ffStrbufAppendS(&buffer, result->type == FF_DISPLAY_TYPE_BUILTIN ? " [Built-in]" : " [External]");
+
+            if (result->hdrEnabled)
+                ffStrbufAppendS(&buffer, " [HDR]");
 
             if(moduleIndex > 0 && result->primary)
-                printf(" *");
+                ffStrbufAppendS(&buffer, " *");
 
-            putchar('\n');
+            ffStrbufPutTo(&buffer, stdout);
+            ffStrbufClear(&buffer);
         }
         else
         {
+            double ppi = sqrt(result->width * result->width + result->height * result->height) / inch;
+
+            char refreshRate[16];
+            if(result->refreshRate > 0)
+            {
+                if(options->preciseRefreshRate)
+                    snprintf(refreshRate, sizeof(refreshRate), "%g", ((int) (result->refreshRate * 1000 + 0.5)) / 1000.0);
+                else
+                    snprintf(refreshRate, sizeof(refreshRate), "%i", (uint32_t) (result->refreshRate + 0.5));
+            }
+            else
+                refreshRate[0] = 0;
+
             FF_PRINT_FORMAT_CHECKED(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY, FF_DISPLAY_NUM_FORMAT_ARGS, ((FFformatarg[]) {
-                {FF_FORMAT_ARG_TYPE_UINT, &result->width},
-                {FF_FORMAT_ARG_TYPE_UINT, &result->height},
-                {FF_FORMAT_ARG_TYPE_DOUBLE, &result->refreshRate},
-                {FF_FORMAT_ARG_TYPE_UINT, &result->scaledWidth},
-                {FF_FORMAT_ARG_TYPE_UINT, &result->scaledHeight},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &result->name},
-                {FF_FORMAT_ARG_TYPE_STRING, displayType},
-                {FF_FORMAT_ARG_TYPE_UINT, &result->rotation},
-                {FF_FORMAT_ARG_TYPE_BOOL, &result->primary},
+                {FF_FORMAT_ARG_TYPE_UINT, &result->width, "width"},
+                {FF_FORMAT_ARG_TYPE_UINT, &result->height, "height"},
+                {FF_FORMAT_ARG_TYPE_STRING, refreshRate, "refresh-rate"},
+                {FF_FORMAT_ARG_TYPE_UINT, &result->scaledWidth, "scaled-width"},
+                {FF_FORMAT_ARG_TYPE_UINT, &result->scaledHeight, "scaled-height"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &result->name, "name"},
+                {FF_FORMAT_ARG_TYPE_STRING, displayType, "type"},
+                {FF_FORMAT_ARG_TYPE_UINT, &result->rotation, "rotation"},
+                {FF_FORMAT_ARG_TYPE_BOOL, &result->primary, "is-primary"},
+                {FF_FORMAT_ARG_TYPE_UINT, &result->physicalWidth, "physical-width"},
+                {FF_FORMAT_ARG_TYPE_UINT, &result->physicalHeight, "physical-height"},
+                {FF_FORMAT_ARG_TYPE_DOUBLE, &inch, "inch"},
+                {FF_FORMAT_ARG_TYPE_DOUBLE, &ppi, "ppi"},
+                {FF_FORMAT_ARG_TYPE_UINT8, &result->bitDepth, "bit-depth"},
+                {FF_FORMAT_ARG_TYPE_BOOL, &result->hdrEnabled, "hdr-enabled"},
             }));
         }
     }
@@ -279,19 +311,32 @@ void ffGenerateDisplayJsonResult(FF_MAYBE_UNUSED FFDisplayOptions* options, yyjs
         yyjson_mut_obj_add_str(doc, module, "error", "Couldn't detect display");
         return;
     }
+
     yyjson_mut_val* arr = yyjson_mut_obj_add_arr(doc, module, "result");
     FF_LIST_FOR_EACH(FFDisplayResult, item, dsResult->displays)
     {
         yyjson_mut_val* obj = yyjson_mut_arr_add_obj(doc, arr);
-        yyjson_mut_obj_add_uint(doc, obj, "width", item->width);
-        yyjson_mut_obj_add_uint(doc, obj, "height", item->height);
         yyjson_mut_obj_add_uint(doc, obj, "id", item->id);
         yyjson_mut_obj_add_strbuf(doc, obj, "name", &item->name);
         yyjson_mut_obj_add_bool(doc, obj, "primary", item->primary);
+
+        yyjson_mut_val* output = yyjson_mut_obj_add_obj(doc, obj, "output");
+        yyjson_mut_obj_add_uint(doc, output, "width", item->width);
+        yyjson_mut_obj_add_uint(doc, output, "height", item->height);
+
+        yyjson_mut_val* scaled = yyjson_mut_obj_add_obj(doc, obj, "scaled");
+        yyjson_mut_obj_add_uint(doc, scaled, "width", item->scaledWidth);
+        yyjson_mut_obj_add_uint(doc, scaled, "height", item->scaledHeight);
+
+        yyjson_mut_val* physical = yyjson_mut_obj_add_obj(doc, obj, "physical");
+        yyjson_mut_obj_add_uint(doc, physical, "width", item->physicalWidth);
+        yyjson_mut_obj_add_uint(doc, physical, "height", item->physicalHeight);
+
         yyjson_mut_obj_add_real(doc, obj, "refreshRate", item->refreshRate);
         yyjson_mut_obj_add_uint(doc, obj, "rotation", item->rotation);
-        yyjson_mut_obj_add_uint(doc, obj, "scaledHeight", item->scaledHeight);
-        yyjson_mut_obj_add_uint(doc, obj, "scaledWidth", item->scaledWidth);
+        yyjson_mut_obj_add_uint(doc, obj, "bitDepth", item->bitDepth);
+        yyjson_mut_obj_add_bool(doc, obj, "hdrEnabled", item->hdrEnabled);
+
         switch (item->type)
         {
             case FF_DISPLAY_TYPE_BUILTIN:
@@ -310,15 +355,21 @@ void ffGenerateDisplayJsonResult(FF_MAYBE_UNUSED FFDisplayOptions* options, yyjs
 void ffPrintDisplayHelpFormat(void)
 {
     FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_DISPLAY_MODULE_NAME, "{1}x{2} @ {3}Hz (as {4}x{5}) [{7}]", FF_DISPLAY_NUM_FORMAT_ARGS, ((const char* []) {
-        "Screen width (in pixels)",
-        "Screen height (in pixels)",
-        "Screen refresh rate (in Hz)",
-        "Screen scaled width (in pixels)",
-        "Screen scaled height (in pixels)",
-        "Screen name",
-        "Screen type (builtin, external or unknown)",
-        "Screen rotation (in degrees)",
-        "True if being the primary screen",
+        "Screen width (in pixels) - width",
+        "Screen height (in pixels) - height",
+        "Screen refresh rate (in Hz) - refresh-rate",
+        "Screen scaled width (in pixels) - scaled-width",
+        "Screen scaled height (in pixels) - scaled-height",
+        "Screen name - name",
+        "Screen type (builtin, external or unknown) - type",
+        "Screen rotation (in degrees) - rotation",
+        "True if being the primary screen - is-primary",
+        "Screen physical width (in millimeters) - physical-width",
+        "Screen physical height (in millimeters) - physical-height",
+        "Physical diagonal length in inches - inch",
+        "Pixels per inch (PPI) - ppi",
+        "Bits per color channel - bit-depth",
+        "True if high dynamic range (HDR) is enabled - hdr-enabled",
     }));
 }
 
@@ -335,7 +386,7 @@ void ffInitDisplayOptions(FFDisplayOptions* options)
         ffPrintDisplayHelpFormat,
         ffGenerateDisplayJsonConfig
     );
-    ffOptionInitModuleArg(&options->moduleArgs);
+    ffOptionInitModuleArg(&options->moduleArgs, "󰍹");
     options->compactType = FF_DISPLAY_COMPACT_TYPE_NONE;
     options->preciseRefreshRate = false;
 }

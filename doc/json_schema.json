@@ -4,9 +4,8 @@
         "colors": {
             "type": "string",
             "enum": [
-                "reset_", "bright_", "dim_",
-                "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white", "default",
-                "bright_black", "bright_red", "bright_green", "bright_yellow", "bright_blue", "bright_magenta", "bright_cyan", "bright_white"
+                "reset_", "bright_", "dim_", "italic_", "underline_", "blink_", "inverse_", "hidden_", "strike_", "light_",
+                "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white", "default"
             ]
         },
         "key": {
@@ -23,9 +22,17 @@
             "minimum": 0,
             "default": 0
         },
-        "format": {
-            "description": "Output format of the module",
+        "keyIcon": {
+            "description": "Set the icon to be displayed by `display.keyType: \"icon\"`",
             "type": "string"
+        },
+        "format": {
+            "description": "Output format of the module. See `-h <module>-format` for detail. I.e: fastfetch -h disk-format",
+            "type": "string"
+        },
+        "outputColor": {
+            "description": "Output color of the module. Left empty to use `display.color.output`",
+            "$ref": "#/$defs/colors"
         },
         "percent": {
             "description": "Threshold of percentage colors",
@@ -86,10 +93,12 @@
             "default": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json"
         },
         "logo": {
+            "description": "Fastfetch logo configurations\nSee also https://github.com/fastfetch-cli/fastfetch/wiki/Logo-options",
             "oneOf": [
                 {
                     "description": "Disable logo",
-                    "type": "null"
+                    "type": "null",
+                    "const": null
                 },
                 {
                     "description": "Set the source file of the logo",
@@ -214,10 +223,15 @@
                             "description": "If true, regenerate image logo cache",
                             "default": false
                         },
-                        "separate": {
-                            "type": "boolean",
-                            "description": "If true, print modules at bottom of the logo",
-                            "default": false
+                        "position": {
+                            "type": "string",
+                            "description": "Set the position of the logo should be displayed",
+                            "enum": [
+                                "left",
+                                "top",
+                                "right"
+                            ],
+                            "default": "left"
                         },
                         "chafa": {
                             "type": "object",
@@ -294,10 +308,6 @@
                     "type": "string",
                     "description": "The name of the player to use for module Media and Player. Linux only"
                 },
-                "osFile": {
-                    "type": "string",
-                    "description": "Set the path to the file containing OS information. Linux only"
-                },
                 "dsForceDrm": {
                     "description": "Force display detection to use DRM. Linux only",
                     "oneOf": [
@@ -328,6 +338,16 @@
                     "type": "integer",
                     "description": "Set the timeout (ms) when waiting for child processes, `-1` for no timeout",
                     "default": 1000
+                },
+                "preRun": {
+                    "type": "string",
+                    "description": "Set the command to be executed before printing logos",
+                    "default": ""
+                },
+                "showVersion": {
+                    "type": "boolean",
+                    "description": "Whether to detect and display component versions. Mainly for benchmarking",
+                    "default": true
                 }
             }
         },
@@ -337,9 +357,17 @@
             "additionalProperties": false,
             "properties": {
                 "stat": {
-                    "type": "boolean",
-                    "description": "Show time usage (in ms) for individual modules",
-                    "default": false
+                    "description": "Show time usage (in ms) for individual modules with optional threshold",
+                    "oneOf": [
+                        {
+                            "type": "boolean",
+                            "default": false
+                        },
+                        {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    ]
                 },
                 "pipe": {
                     "type": "boolean",
@@ -384,6 +412,14 @@
                                 "title": {
                                     "description": "Set the color of the title",
                                     "$ref": "#/$defs/colors"
+                                },
+                                "output": {
+                                    "description": "Set the color of the module output",
+                                    "$ref": "#/$defs/colors"
+                                },
+                                "separator": {
+                                    "description": "Set the color of the key-value separator",
+                                    "$ref": "#/$defs/colors"
                                 }
                             }
                         }
@@ -394,35 +430,59 @@
                     "type": "boolean",
                     "default": true
                 },
-                "keyWidth": {
-                    "description": "Align the width of keys to number of characters, 0 to disable",
-                    "type": "integer",
-                    "minimum": 0,
-                    "default": 0
-                },
-                "binaryPrefix": {
-                    "type": "string",
-                    "description": "Set the binary prefix to used when printing bytes",
-                    "oneOf": [
-                        {
-                            "const": "iec",
-                            "description": "1024 Bytes = 1 KiB, 1024 KiB = 1 MiB, ... (standard)"
+                "key": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Set how module keys should be displayed",
+                    "properties": {
+                        "width": {
+                            "description": "Align the width of keys to number of characters, 0 to disable",
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 0
                         },
-                        {
-                            "const": "si",
-                            "description": "1000 Bytes = 1 KB, 1000 KB = 1 MB, ..."
+                        "type": {
+                            "type": "string",
+                            "description": "Set whether to show icon before string keys",
+                            "enum": [
+                                "none",
+                                "string",
+                                "icon",
+                                "both"
+                            ],
+                            "default": "string"
                         },
-                        {
-                            "const": "jedec",
-                            "description": "1024 Bytes = 1 kB, 1024 K = 1 MB, ..."
+                        "paddingLeft": {
+                            "type": "integer",
+                            "description": "Set the left padding of keys",
+                            "minimum": 0,
+                            "default": 0
                         }
-                    ]
+                    }
                 },
                 "size": {
                     "type": "object",
                     "additionalProperties": false,
                     "description": "Set how a size value should be displayed",
                     "properties": {
+                        "binaryPrefix": {
+                            "type": "string",
+                            "description": "Set the binary prefix to used when formatting sizes",
+                            "oneOf": [
+                                {
+                                    "const": "iec",
+                                    "description": "1024 Bytes = 1 KiB, 1024 KiB = 1 MiB, ... (standard)"
+                                },
+                                {
+                                    "const": "si",
+                                    "description": "1000 Bytes = 1 KB, 1000 KB = 1 MB, ..."
+                                },
+                                {
+                                    "const": "jedec",
+                                    "description": "1024 Bytes = 1 kB, 1024 K = 1 MB, ..."
+                                }
+                            ]
+                        },
                         "maxPrefix": {
                             "type": "string",
                             "description": "Set the largest binary prefix to use when formatting sizes",
@@ -492,10 +552,15 @@
                             "description": "Set the character to use in total part",
                             "default": "-"
                         },
-                        "border": {
-                            "type": "boolean",
-                            "description": "Whether to show a border around the bar",
-                            "default": true
+                        "borderLeft": {
+                            "type": "string",
+                            "description": "Set the string to use at left border",
+                            "default": "[ "
+                        },
+                        "borderRight": {
+                            "type": "string",
+                            "description": "Set the string to use at right border",
+                            "default": " ]"
                         },
                         "width": {
                             "type": "integer",
@@ -512,7 +577,7 @@
                     "properties": {
                         "type": {
                             "type": "number",
-                            "description": "Set the percentage output type. 1 for percentage number, 2 for bar, 3 for both, 6 for bar only, 9 for colored number",
+                            "description": "Set the percentage output type. 1 for percentage number, 2 for multi-color bar, 3 for both, 6 for bar only, 9 for colored number, 10 for monochrome bar",
                             "minimum": 0,
                             "maximum": 255,
                             "default": 9
@@ -545,10 +610,31 @@
                         }
                     }
                 },
+                "freq": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Set how frequency values should be displayed",
+                    "properties": {
+                        "ndigits": {
+                            "type": "integer",
+                            "description": "Set the number of digits to keep after the decimal point when formatting frequency values\nA positive value will show the frequency in GHz of decimal\n-1 will show the frequency in MHz",
+                            "minimum": -1,
+                            "maximum": 9,
+                            "default": 2
+                        }
+                    }
+                },
                 "noBuffer": {
                     "type": "boolean",
                     "description": "Whether to disable the stdout application buffer",
                     "default": false
+                },
+                "constants": {
+                    "type": "array",
+                    "description": "List of strings to be used in custom format of modules",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -557,10 +643,6 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "pci": {
-                    "type": "string",
-                    "description": "GPU output (Linux and FreeBSD)"
-                },
                 "vulkan": {
                     "type": "string",
                     "description": "Vulkan module & fallback for GPU output"
@@ -575,39 +657,39 @@
                 },
                 "xcbRandr": {
                     "type": "string",
-                    "description": "X11 sessions for better display detection and faster WM detection.\nThe *randr ones provide multi monitor support The libxcb* ones usually have better performance.\n (Linux, FreeBSD)"
+                    "description": "X11 sessions for better display detection and faster WM detection.\nThe *randr ones provide multi monitor support The libxcb* ones usually have better performance.\n (Linux, FreeBSD, SunOS)"
                 },
                 "xcb": {
                     "type": "string",
-                    "description": "X11 sessions for better display detection and faster WM detection.\nThe *randr ones provide multi monitor support The libxcb* ones usually have better performance.\n (Linux, FreeBSD)"
+                    "description": "X11 sessions for better display detection and faster WM detection.\nThe *randr ones provide multi monitor support The libxcb* ones usually have better performance.\n (Linux, FreeBSD, SunOS)"
                 },
                 "xrandr": {
                     "type": "string",
-                    "description": "X11 sessions for better display detection and faster WM detection.\nThe *randr ones provide multi monitor support The libxcb* ones usually have better performance.\n (Linux, FreeBSD)"
+                    "description": "X11 sessions for better display detection and faster WM detection.\nThe *randr ones provide multi monitor support The libxcb* ones usually have better performance.\n (Linux, FreeBSD, SunOS)"
                 },
                 "x11": {
                     "type": "string",
-                    "description": "X11 sessions for better display detection and faster WM detection.\nThe *randr ones provide multi monitor support The libxcb* ones usually have better performance.\n (Linux, FreeBSD)"
+                    "description": "X11 sessions for better display detection and faster WM detection.\nThe *randr ones provide multi monitor support The libxcb* ones usually have better performance.\n (Linux, FreeBSD, SunOS)"
                 },
                 "drm": {
                     "type": "string",
-                    "description": "Used for fast resolution and refresh rate detection (Linux)"
+                    "description": "Used for fast resolution and refresh rate detection (Linux, FreeBSD)"
                 },
                 "gio": {
                     "type": "string",
-                    "description": "Needed for values that are only stored GSettings (Linux, FreeBSD)"
+                    "description": "Needed for values that are only stored GSettings (Linux, FreeBSD, SunOS)"
                 },
                 "dconf": {
                     "type": "string",
-                    "description": "Needed for values that are only stored in DConf + Fallback for GSettings (Linux, FreeBSD)"
+                    "description": "Needed for values that are only stored in DConf + Fallback for GSettings (Linux, FreeBSD, SunOS)"
                 },
                 "dbus": {
                     "type": "string",
-                    "description": "Bluetooth, Player & Media detection (Linux, FreeBSD)"
+                    "description": "Bluetooth, Player & Media detection (Linux, FreeBSD, SunOS)"
                 },
                 "xfconf": {
                     "type": "string",
-                    "description": "Needed for XFWM theme and XFCE Terminal font (Linux, FreeBSD)"
+                    "description": "Needed for XFWM theme and XFCE Terminal font (Linux, FreeBSD, SunOS)"
                 },
                 "sqlite3": {
                     "type": "string",
@@ -619,34 +701,34 @@
                 },
                 "imagemagick": {
                     "type": "string",
-                    "description": "Images in terminal using sixel or kitty graphics protocol (Linux, FreeBSD, macOS)"
+                    "description": "Images in terminal using sixel or kitty graphics protocol (Linux, FreeBSD, SunOS, macOS)"
                 },
                 "z": {
-                    "description": "Libz. Faster image output when using kitty graphics protocol (Linux, FreeBSD, macOS)",
+                    "description": "Libz. Faster image output when using kitty graphics protocol (Linux, FreeBSD, SunOS, macOS)",
                     "type": "string"
                 },
                 "chafa": {
                     "type": "string",
-                    "description": "Image output as ascii art (Linux, FreeBSD, macOS)"
+                    "description": "Image output as ascii art (Linux, FreeBSD, SunOS, macOS)"
                 },
                 "egl": {
                     "type": "string",
-                    "description": "Needed by the OpenGL module for gl context creation (Linux, FreeBSD)"
+                    "description": "Library used by the OpenGL module for gl context creation (Linux, FreeBSD, SunOS, Windows)"
                 },
                 "glx": {
                     "type": "string",
-                    "description": "Needed by the OpenGL module for gl context creation (Linux, FreeBSD)"
+                    "description": "Library used by the OpenGL module for gl context creation (Linux, FreeBSD, SunOS)"
                 },
                 "osmesa": {
                     "type": "string",
-                    "description": "Needed by the OpenGL module for gl context creation (Linux, FreeBSD)"
+                    "description": "Library used by the OpenGL module for gl context creation (Linux, FreeBSD, SunOS)"
                 },
                 "opencl": {
                     "type": "string",
-                    "description": "OpenCL module (Linux, FreeBSD, Windows)"
+                    "description": "OpenCL module (Linux, FreeBSD, SunOS, Windows)"
                 },
                 "pulse": {
-                    "description": "Pulseaudio. Used for Sound detection (Linux, FreeBSD)",
+                    "description": "Pulseaudio. Used for Sound detection (Linux, FreeBSD, SunOS)",
                     "type": "string"
                 },
                 "nm": {
@@ -655,6 +737,10 @@
                 },
                 "ddcutil": {
                     "description": "Used for brightness detection of external displays (Linux)",
+                    "type": "string"
+                },
+                "elf": {
+                    "description": "Used for st terminal font detection and systemd version detection (Linux)",
                     "type": "string"
                 }
             }
@@ -671,11 +757,15 @@
                             "battery",
                             "bios",
                             "bluetooth",
+                            "bluetoothradio",
                             "board",
+                            "bootmgr",
                             "break",
                             "brightness",
+                            "camera",
                             "chassis",
                             "cpu",
+                            "cpucache",
                             "cpuusage",
                             "command",
                             "colors",
@@ -685,13 +775,17 @@
                             "disk",
                             "diskio",
                             "de",
+                            "dns",
+                            "editor",
                             "font",
                             "gamepad",
                             "gpu",
                             "host",
                             "icons",
+                            "initsystem",
                             "kernel",
                             "lm",
+                            "loadavg",
                             "locale",
                             "localip",
                             "media",
@@ -703,6 +797,7 @@
                             "os",
                             "packages",
                             "physicaldisk",
+                            "physicalmemory",
                             "player",
                             "poweradapter",
                             "processes",
@@ -725,12 +820,12 @@
                             "weather",
                             "wm",
                             "wifi",
-                            "wmtheme"
+                            "wmtheme",
+                            "zpool"
                         ]
                     },
                     {
                         "type": "object",
-                        "additionalProperties": false,
                         "description": "Run module with custom configurations",
                         "required": [
                             "type"
@@ -762,11 +857,23 @@
                                         "anyOf": [
                                             {
                                                 "const": "bios",
-                                                "description": "Print BIOS name, version, release date, etc"
+                                                "description": "Print information of 1st-stage bootloader (name, version, release date, etc)"
                                             },
                                             {
                                                 "const": "board",
-                                                "description": "Print mather board name and other info"
+                                                "description": "Print motherboard name and other info"
+                                            },
+                                            {
+                                                "const": "bootmgr",
+                                                "description": "Print information of 2nd-stage bootloader (name, firmware, etc)"
+                                            },
+                                            {
+                                                "const": "camera",
+                                                "description": "Print available cameras"
+                                            },
+                                            {
+                                                "const": "cpucache",
+                                                "description": "Print CPU cache sizes"
                                             },
                                             {
                                                 "const": "cursor",
@@ -775,6 +882,10 @@
                                             {
                                                 "const": "datetime",
                                                 "description": "Print current date and time"
+                                            },
+                                            {
+                                                "const": "editor",
+                                                "description": "Print information of the default editor ($VISUAL or $EDITOR)"
                                             },
                                             {
                                                 "const": "font",
@@ -787,6 +898,10 @@
                                             {
                                                 "const": "icons",
                                                 "description": "Print icon style name"
+                                            },
+                                            {
+                                                "const": "initsystem",
+                                                "description": "Print init system (pid 1) name and version"
                                             },
                                             {
                                                 "const": "kernel",
@@ -815,6 +930,10 @@
                                             {
                                                 "const": "os",
                                                 "description": "Print operating system name and version"
+                                            },
+                                            {
+                                                "const": "physicalmemory",
+                                                "description": "Print system physical memory devices"
                                             },
                                             {
                                                 "const": "player",
@@ -857,10 +976,6 @@
                                                 "description": "Print how long system has been running"
                                             },
                                             {
-                                                "const": "users",
-                                                "description": "Print users currently logged in"
-                                            },
-                                            {
                                                 "const": "version",
                                                 "description": "Print Fastfetch version"
                                             },
@@ -879,6 +994,10 @@
                                             {
                                                 "const": "wmtheme",
                                                 "description": "Print current theme of window manager"
+                                            },
+                                            {
+                                                "const": "zpool",
+                                                "description": "Print ZFS storage pools"
                                             }
                                         ]
                                     },
@@ -888,8 +1007,14 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -922,8 +1047,14 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -936,7 +1067,7 @@
                                 "additionalProperties": false,
                                 "properties": {
                                     "type": {
-                                        "description": "List bluetooth devices",
+                                        "description": "List (connected) bluetooth devices",
                                         "const": "bluetooth"
                                     },
                                     "showDisconnected": {
@@ -953,8 +1084,43 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
+                                    },
+                                    "format": {
+                                        "$ref": "#/$defs/format"
+                                    }
+                                }
+                            },
+                            {
+                                "title": "Bluetooth Radio",
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "type": {
+                                        "description": "List bluetooth radios width supported version and vendor",
+                                        "const": "bluetoothradio"
+                                    },
+                                    "key": {
+                                        "$ref": "#/$defs/key"
+                                    },
+                                    "keyColor": {
+                                        "$ref": "#/$defs/keyColor"
+                                    },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
+                                    "keyWidth": {
+                                        "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -979,6 +1145,24 @@
                                         "minimum": 0,
                                         "maximum": 400,
                                         "default": 10
+                                    },
+                                    "key": {
+                                        "$ref": "#/$defs/key"
+                                    },
+                                    "keyColor": {
+                                        "$ref": "#/$defs/keyColor"
+                                    },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
+                                    "keyWidth": {
+                                        "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
+                                    },
+                                    "format": {
+                                        "$ref": "#/$defs/format"
                                     }
                                 }
                             },
@@ -997,8 +1181,14 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1017,12 +1207,10 @@
                                     "temp": {
                                         "$ref": "#/$defs/temperature"
                                     },
-                                    "freqNdigits": {
-                                        "description": "Set the number of digits to keep after the decimal point when printing CPU frequency",
-                                        "type": "integer",
-                                        "minimum": 0,
-                                        "maximum": 9,
-                                        "default": 2
+                                    "showPeCoreCount": {
+                                        "description": "Detect and display CPU frequency of different core types (eg. Pcore and Ecore) if supported",
+                                        "type": "boolean",
+                                        "default": false
                                     },
                                     "key": {
                                         "$ref": "#/$defs/key"
@@ -1030,8 +1218,14 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1054,6 +1248,24 @@
                                         "type": "boolean",
                                         "description": "Display CPU usage per CPU logical core, instead of an average result",
                                         "default": false
+                                    },
+                                    "key": {
+                                        "$ref": "#/$defs/key"
+                                    },
+                                    "keyColor": {
+                                        "$ref": "#/$defs/keyColor"
+                                    },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
+                                    "keyWidth": {
+                                        "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
+                                    },
+                                    "format": {
+                                        "$ref": "#/$defs/format"
                                     }
                                 }
                             },
@@ -1071,13 +1283,14 @@
                                         "type": "string",
                                         "enum": [
                                             "block",
+                                            "background",
                                             "circle",
                                             "diamond",
                                             "triangle",
                                             "square",
                                             "star"
                                         ],
-                                        "default": "block"
+                                        "default": "background"
                                     },
                                     "paddingLeft": {
                                         "description": "Set the number of white spaces to print before the symbol",
@@ -1108,6 +1321,12 @@
                                                 "maxItems": 2
                                             }
                                         }
+                                    },
+                                    "key": {
+                                        "$ref": "#/$defs/key"
+                                    },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
                                     }
                                 }
                             },
@@ -1134,8 +1353,14 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1158,17 +1383,20 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "description": "Text to print",
                                         "type": "string"
                                     }
-                                },
-                                "required": [
-                                    "format"
-                                ]
+                                }
                             },
                             {
                                 "title": "Display",
@@ -1210,8 +1438,14 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1229,7 +1463,7 @@
                                     },
                                     "folders": {
                                         "type": "string",
-                                        "description": "A colon (semicolon on Windows) separated list of folder paths for the disk output\nDefault: auto detection using mount-points"
+                                        "description": "A colon (semicolon on Windows) separated list of folder paths for the disk output\nDefault: auto detection using mount-points\nThis option overrides other `show*` options"
                                     },
                                     "showExternal": {
                                         "type": "boolean",
@@ -1270,8 +1504,14 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1302,8 +1542,14 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1330,8 +1576,52 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
+                                    },
+                                    "format": {
+                                        "$ref": "#/$defs/format"
+                                    }
+                                }
+                            },
+                            {
+                                "title": "DNS",
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "type": {
+                                        "const": "dns",
+                                        "description": "Print DNS servers"
+                                    },
+                                    "showType": {
+                                        "enum": [
+                                            "ipv4",
+                                            "ipv6",
+                                            "both"
+                                        ],
+                                        "default": "both",
+                                        "description": "Specify the type of DNS servers should be detected"
+                                    },
+                                    "key": {
+                                        "$ref": "#/$defs/key"
+                                    },
+                                    "keyColor": {
+                                        "$ref": "#/$defs/keyColor"
+                                    },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
+                                    "keyWidth": {
+                                        "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1356,8 +1646,14 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1381,10 +1677,17 @@
                                         "type": "boolean",
                                         "default": false
                                     },
-                                    "forceVulkan": {
-                                        "description": "Force using vulkan to detect GPUs, which support video memory usage detection with `--allow-slow-operations`",
-                                        "type": "boolean",
-                                        "default": false
+                                    "detectionMethod": {
+                                        "description": "Force using a specified method to detect GPUs",
+                                        "type": "string",
+                                        "enum": [
+                                            "auto",
+                                            "pci",
+                                            "vulkan",
+                                            "opencl",
+                                            "opengl"
+                                        ],
+                                        "default": "auto"
                                     },
                                     "hideType": {
                                         "description": "Specify the type of GPUs should not be printed",
@@ -1401,8 +1704,14 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1438,6 +1747,16 @@
                                         "type": "boolean",
                                         "default": false
                                     },
+                                    "showPrefixLen": {
+                                        "description": "Show network prefix length (/N)",
+                                        "type": "boolean",
+                                        "default": true
+                                    },
+                                    "showAllIps": {
+                                        "description": "Show all IPs bound to the same interface.\nBy default only the first IP is shown",
+                                        "type": "boolean",
+                                        "default": false
+                                    },
                                     "compact": {
                                         "description": "Show all IPs in one line",
                                         "type": "boolean",
@@ -1458,8 +1777,14 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1484,8 +1809,58 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
+                                    },
+                                    "format": {
+                                        "$ref": "#/$defs/format"
+                                    }
+                                }
+                            },
+                            {
+                                "title": "Loadavg",
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "type": {
+                                        "const": "loadavg",
+                                        "description": "Print system load averages"
+                                    },
+                                    "ndigits": {
+                                        "type": "integer",
+                                        "description": "Set the number of digits to keep after the decimal point",
+                                        "minimum": 0,
+                                        "maximum": 9,
+                                        "default": 2
+                                    },
+                                    "compact": {
+                                        "type": "boolean",
+                                        "description": "Show values in one line",
+                                        "default": true
+                                    },
+                                    "percent": {
+                                        "$ref": "#/$defs/percent"
+                                    },
+                                    "key": {
+                                        "$ref": "#/$defs/key"
+                                    },
+                                    "keyColor": {
+                                        "$ref": "#/$defs/keyColor"
+                                    },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
+                                    "keyWidth": {
+                                        "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1521,8 +1896,14 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1539,7 +1920,7 @@
                                         "const": "opengl"
                                     },
                                     "library": {
-                                        "description": "Set the OpenGL context creation library to use. Linux only",
+                                        "description": "Set the OpenGL context creation library to use",
                                         "enum": [
                                             "auto",
                                             "egl",
@@ -1554,8 +1935,14 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1572,9 +1959,39 @@
                                         "description": "List installed package managers and count of installed packages"
                                     },
                                     "disabled": {
-                                        "description": "A colon separated list of package managers to be disabled when detecting",
-                                        "type": "string",
-                                        "default": "winget"
+                                        "description": "List of package managers to be disabled when detecting",
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "enum": [
+                                                "am",
+                                                "apk",
+                                                "brew",
+                                                "choco",
+                                                "dpkg",
+                                                "emerge",
+                                                "eopkg",
+                                                "flatpak",
+                                                "guix",
+                                                "lpkg",
+                                                "lpkgbuild",
+                                                "macports",
+                                                "nix",
+                                                "opkg",
+                                                "pacman",
+                                                "paludis",
+                                                "pkg",
+                                                "pkgtool",
+                                                "rpm",
+                                                "scoop",
+                                                "snap",
+                                                "sorcery",
+                                                "winget",
+                                                "xbps"
+                                            ],
+                                            "uniqueItems": true
+                                        },
+                                        "default": ["winget"]
                                     },
                                     "key": {
                                         "$ref": "#/$defs/key"
@@ -1582,8 +1999,14 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1612,8 +2035,14 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1641,14 +2070,25 @@
                                         "minimum": 0,
                                         "default": "disabled (0)"
                                     },
+                                    "ipv6": {
+                                        "description": "Whether to use IPv6 for public IP detection server",
+                                        "type": "boolean",
+                                        "default": false
+                                    },
                                     "key": {
                                         "$ref": "#/$defs/key"
                                     },
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1665,9 +2105,19 @@
                                         "const": "separator"
                                     },
                                     "string": {
-                                        "description": "Set the string to be printed",
+                                        "description": "Set the string to be printed by the separator line",
                                         "type": "string",
                                         "default": "-"
+                                    },
+                                    "outputColor": {
+                                        "description": "Set the color of the separator line",
+                                        "$ref": "#/$defs/outputColor"
+                                    },
+                                    "length": {
+                                        "description": "Set the length of the separator line, or 0 to auto-detect",
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "default": 0
                                     }
                                 }
                             },
@@ -1699,8 +2149,14 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1725,8 +2181,14 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1772,8 +2234,53 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
+                                    },
+                                    "format": {
+                                        "$ref": "#/$defs/format"
+                                    }
+                                }
+                            },
+                            {
+                                "title": "Users",
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "type": {
+                                        "const": "users",
+                                        "description": "Print users currently logged in"
+                                    },
+                                    "compact": {
+                                        "type": "boolean",
+                                        "description": "Show all active users in one line",
+                                        "default": false
+                                    },
+                                    "myselfOnly": {
+                                        "type": "boolean",
+                                        "description": "Show only the current user",
+                                        "default": false
+                                    },
+                                    "key": {
+                                        "$ref": "#/$defs/key"
+                                    },
+                                    "keyColor": {
+                                        "$ref": "#/$defs/keyColor"
+                                    },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
+                                    "keyWidth": {
+                                        "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1810,8 +2317,14 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"
@@ -1838,8 +2351,14 @@
                                     "keyColor": {
                                         "$ref": "#/$defs/keyColor"
                                     },
+                                    "keyIcon": {
+                                        "$ref": "#/$defs/keyIcon"
+                                    },
                                     "keyWidth": {
                                         "$ref": "#/$defs/keyWidth"
+                                    },
+                                    "outputColor": {
+                                        "$ref": "#/$defs/outputColor"
                                     },
                                     "format": {
                                         "$ref": "#/$defs/format"

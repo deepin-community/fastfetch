@@ -6,9 +6,9 @@
 #include <limits.h>
 #include <ctype.h>
 #include <dirent.h>
+#include <mntent.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
-#include <mntent.h>
 #include <sys/mount.h>
 
 #ifdef __USE_LARGEFILE64
@@ -31,7 +31,7 @@ static bool isPhysicalDevice(const struct mntent* device)
 
     //DrvFs is a filesystem plugin to WSL that was designed to support interop between WSL and the Windows filesystem.
     if(ffStrEquals(device->mnt_type, "9p"))
-        return true;
+        return ffStrContains(device->mnt_opts, "aname=drvfs");
 
     //ZFS pool
     if(ffStrEquals(device->mnt_type, "zfs"))
@@ -70,6 +70,10 @@ static bool isPhysicalDevice(const struct mntent* device)
         ffStrStartsWith(device->mnt_fsname + 5, "ram")  || //Ignore ram devices
         ffStrStartsWith(device->mnt_fsname + 5, "fd")      //Ignore fd devices
     ) return false;
+
+    // https://source.android.com/docs/core/ota/apex?hl=zh-cn
+    if(ffStrStartsWith(device->mnt_dir, "/apex/"))
+        return false;
 
     #endif // __ANDROID__
 
@@ -236,14 +240,29 @@ static void detectStats(FFDisk* disk)
     disk->bytesAvailable = fs.f_bavail * fs.f_frsize;
     disk->bytesUsed = 0; // To be filled in ./disk.c
 
-    disk->filesTotal = (uint32_t) fs.f_files;
-    disk->filesUsed = (uint32_t) (disk->filesTotal - fs.f_ffree);
+    if (fs.f_files >= fs.f_ffree)
+    {
+        disk->filesTotal = (uint32_t) fs.f_files;
+        disk->filesUsed = (uint32_t) (disk->filesTotal - fs.f_ffree);
+    }
+    else
+    {
+        // Windows filesystem in WSL
+        disk->filesTotal = disk->filesUsed = 0;
+    }
 
     if(fs.f_flag & ST_RDONLY)
         disk->type |= FF_DISK_VOLUME_TYPE_READONLY_BIT;
+
+    disk->createTime = 0;
+    #ifdef FF_HAVE_STATX
+    struct statx stx;
+    if (statx(0, disk->mountpoint.chars, 0, STATX_BTIME, &stx) == 0 && (stx.stx_mask & STATX_BTIME))
+        disk->createTime = (uint64_t)((stx.stx_btime.tv_sec * 1000) + (stx.stx_btime.tv_nsec / 1000000));
+    #endif
 }
 
-const char* ffDetectDisksImpl(FFlist* disks)
+const char* ffDetectDisksImpl(FFDiskOptions* options, FFlist* disks)
 {
     FILE* mountsFile = setmntent("/proc/mounts", "r");
     if(mountsFile == NULL)
@@ -253,7 +272,12 @@ const char* ffDetectDisksImpl(FFlist* disks)
 
     while((device = getmntent(mountsFile)))
     {
-        if(!isPhysicalDevice(device))
+        if (__builtin_expect(options->folders.length, 0))
+        {
+            if (!ffDiskMatchMountpoint(options, device->mnt_dir))
+                continue;
+        }
+        else if(!isPhysicalDevice(device))
             continue;
 
         //We have a valid device, add it to the list

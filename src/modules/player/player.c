@@ -19,21 +19,30 @@ void ffPrintPlayer(FFPlayerOptions* options)
         return;
     }
 
+    if (media->player.length == 0)
+    {
+        ffPrintError(FF_PLAYER_DISPLAY_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "No media player detected");
+        return;
+    }
+
     FF_STRBUF_AUTO_DESTROY playerPretty = ffStrbufCreate();
 
-    //If we are on a website, prepend the website name
-    if(
-        ffStrbufIgnCaseCompS(&media->playerId, "spotify") == 0 ||
-        ffStrbufIgnCaseCompS(&media->playerId, "vlc") == 0
-    ) {} // do noting, surely not a website, even if the url is set
-    else if(ffStrbufStartsWithS(&media->url, "https://www."))
-        ffStrbufAppendS(&playerPretty, media->url.chars + 12);
-    else if(ffStrbufStartsWithS(&media->url, "http://www."))
-        ffStrbufAppendS(&playerPretty, media->url.chars + 11);
-    else if(ffStrbufStartsWithS(&media->url, "https://"))
-        ffStrbufAppendS(&playerPretty, media->url.chars + 8);
-    else if(ffStrbufStartsWithS(&media->url, "http://"))
-        ffStrbufAppendS(&playerPretty, media->url.chars + 7);
+    if (media->url.length > 0)
+    {
+        //If we are on a website, prepend the website name
+        if(
+            ffStrbufIgnCaseEqualS(&media->playerId, "spotify") ||
+            ffStrbufIgnCaseEqualS(&media->playerId, "vlc")
+        ) {} // do noting, surely not a website, even if the url is set
+        else if(ffStrbufStartsWithS(&media->url, "https://www."))
+            ffStrbufAppendS(&playerPretty, media->url.chars + 12);
+        else if(ffStrbufStartsWithS(&media->url, "http://www."))
+            ffStrbufAppendS(&playerPretty, media->url.chars + 11);
+        else if(ffStrbufStartsWithS(&media->url, "https://"))
+            ffStrbufAppendS(&playerPretty, media->url.chars + 8);
+        else if(ffStrbufStartsWithS(&media->url, "http://"))
+            ffStrbufAppendS(&playerPretty, media->url.chars + 7);
+    }
 
     //If we found a website name, make it more pretty
     if(playerPretty.length > 0)
@@ -65,10 +74,10 @@ void ffPrintPlayer(FFPlayerOptions* options)
     else
     {
         FF_PRINT_FORMAT_CHECKED(FF_PLAYER_DISPLAY_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_PLAYER_NUM_FORMAT_ARGS, ((FFformatarg[]){
-            {FF_FORMAT_ARG_TYPE_STRBUF, &playerPretty},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &media->player},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &media->playerId},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &media->url}
+            {FF_FORMAT_ARG_TYPE_STRBUF, &playerPretty, "player"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &media->player, "name"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &media->playerId, "id"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &media->url, "url"},
         }));
     }
 }
@@ -127,10 +136,10 @@ void ffGeneratePlayerJsonResult(FF_MAYBE_UNUSED FFMediaOptions* options, yyjson_
 void ffPrintPlayerHelpFormat(void)
 {
     FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_PLAYER_MODULE_NAME, "{1}", FF_PLAYER_NUM_FORMAT_ARGS, ((const char* []) {
-        "Pretty player name",
-        "Player name",
-        "Player Identifier",
-        "URL name"
+        "Pretty player name - player",
+        "Player name - name",
+        "Player Identifier - id",
+        "URL name - url",
     }));
 }
 
@@ -147,7 +156,7 @@ void ffInitPlayerOptions(FFPlayerOptions* options)
         ffPrintPlayerHelpFormat,
         ffGeneratePlayerJsonConfig
     );
-    ffOptionInitModuleArg(&options->moduleArgs);
+    ffOptionInitModuleArg(&options->moduleArgs, "󰥠");
 }
 
 void ffDestroyPlayerOptions(FFPlayerOptions* options)

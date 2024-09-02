@@ -4,7 +4,7 @@ Upstream-Contact: https://github.com/fastfetch-cli/fastfetch
 Source: https://github.com/deepin-community/fastfetch.git
 
 Files: *
-Copyright: 2023 Carter Li <zhangsongcui3371@sina.com>
+Copyright: 2024 Carter Li <zhangsongcui3371@sina.com>
 License: Expat
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal

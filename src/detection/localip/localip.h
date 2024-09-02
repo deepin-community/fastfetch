@@ -8,6 +8,8 @@ typedef struct FFLocalIpResult
     FFstrbuf ipv4;
     FFstrbuf ipv6;
     FFstrbuf mac;
+    int32_t mtu;
+    int32_t speed;
     bool defaultRoute;
 } FFLocalIpResult;
 

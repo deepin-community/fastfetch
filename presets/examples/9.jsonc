@@ -4,11 +4,16 @@
         "type": "small"
     },
     "display": {
-        "keyWidth": 11,
+        "key": {
+            "width": 11
+        },
         "bar": {
             "charElapsed": "=",
             "charTotal": "-",
             "width": 13
+        },
+        "percent": {
+            "type": 2
         }
     },
     "modules": [
@@ -16,11 +21,14 @@
         "separator",
         "memory",
         "swap",
-        "disk",
+        {
+            "type": "disk",
+            "folders": "/"
+        },
         "battery",
         {
             "type": "colors",
-            "paddingLeft": 11,
+            "paddingLeft": 10,
             "symbol": "circle"
         }
     ]

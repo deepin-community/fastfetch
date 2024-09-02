@@ -234,10 +234,13 @@ static bool printSpecificCommandHelp(const char* command)
                     }
                 }
 
+                yyjson_doc_free(doc);
                 return true;
             }
         }
     }
+
+    yyjson_doc_free(doc);
     return false;
 }
 
@@ -249,7 +252,7 @@ static void printCommandHelp(const char* command)
         puts(FASTFETCH_DATATEXT_HELP_COLOR);
     else if(ffStrEqualsIgnCase(command, "format"))
         puts(FASTFETCH_DATATEXT_HELP_FORMAT);
-    else if(isalpha(command[0]) && ffStrEndsWithIgnCase(command, "-format")) // <module>-format
+    else if(ffCharIsEnglishAlphabet(command[0]) && ffStrEndsWithIgnCase(command, "-format")) // <module>-format
         printCommandFormatHelp(command);
     else if(!printSpecificCommandHelp(command))
         fprintf(stderr, "Error: No specific help for command '%s' provided\n", command);
@@ -262,6 +265,11 @@ static void listAvailablePresets(bool pretty)
         ffStrbufAppendS(path, "fastfetch/presets/");
         ffListFilesRecursively(path->chars, pretty);
     }
+
+    FF_STRBUF_AUTO_DESTROY absolutePath = ffStrbufCreateCopy(&instance.state.platform.exePath);
+    ffStrbufSubstrBeforeLastC(&absolutePath, '/');
+    ffStrbufAppendS(&absolutePath, "/presets/");
+    ffListFilesRecursively(absolutePath.chars, pretty);
 }
 
 static void listAvailableLogos(void)
@@ -281,12 +289,6 @@ static void listConfigPaths(void)
         uint32_t length = folder->length + (uint32_t) strlen("fastfetch") + 1 /* trailing slash */;
         ffStrbufAppendS(folder, "fastfetch/config.jsonc");
         exists = ffPathExists(folder->chars, FF_PATHTYPE_FILE);
-        if (!exists)
-        {
-            ffStrbufSubstrBefore(folder, folder->length - (uint32_t) strlen("jsonc"));
-            ffStrbufAppendS(folder, "conf");
-            exists = ffPathExists(folder->chars, FF_PATHTYPE_FILE);
-        }
         ffStrbufSubstrBefore(folder, length);
         printf("%s%s\n", folder->chars, exists ? " (*)" : "");
     }
@@ -317,122 +319,47 @@ static void listModules(bool pretty)
     }
 }
 
-static void parseOption(FFdata* data, const char* key, const char* value);
-
 static bool parseJsoncFile(const char* path)
 {
-    yyjson_read_err error;
-    yyjson_doc* doc = yyjson_read_file(path, YYJSON_READ_ALLOW_COMMENTS | YYJSON_READ_ALLOW_TRAILING_COMMAS | YYJSON_READ_ALLOW_INF_AND_NAN, NULL, &error);
-    if (!doc)
+    assert(!instance.state.configDoc);
+
     {
-        if (error.code != YYJSON_READ_ERROR_FILE_OPEN)
+        yyjson_read_err error;
+        instance.state.configDoc = yyjson_read_file(path, YYJSON_READ_ALLOW_COMMENTS | YYJSON_READ_ALLOW_TRAILING_COMMAS, NULL, &error);
+        if (!instance.state.configDoc)
         {
-            fprintf(stderr, "Error: failed to parse JSON config file `%s` at pos %zu: %s\n", path, error.pos, error.msg);
+            if (error.code != YYJSON_READ_ERROR_FILE_OPEN)
+            {
+                size_t row = 0, col = error.pos;
+                FF_STRBUF_AUTO_DESTROY content = ffStrbufCreate();
+                if (ffAppendFileBuffer(path, &content))
+                    yyjson_locate_pos(content.chars, content.length, error.pos, &row, &col, NULL);
+                fprintf(stderr, "Error: failed to parse JSON config file `%s` at (%zu, %zu): %s\n", path, row, col, error.msg);
+                exit(477);
+            }
+            return false;
+        }
+    }
+
+    {
+        const char* error = NULL;
+
+        yyjson_val* const root = yyjson_doc_get_root(instance.state.configDoc);
+        if (!yyjson_is_obj(root))
+            error = "Invalid JSON config format. Root value must be an object";
+
+        if (
+            error ||
+            (error = ffOptionsParseLogoJsonConfig(&instance.config.logo, root)) ||
+            (error = ffOptionsParseGeneralJsonConfig(&instance.config.general, root)) ||
+            (error = ffOptionsParseDisplayJsonConfig(&instance.config.display, root)) ||
+            (error = ffOptionsParseLibraryJsonConfig(&instance.config.library, root)) ||
+            false
+        ) {
+            fprintf(stderr, "JsonConfig Error: %s\n", error);
             exit(477);
         }
-        return false;
     }
-    if (instance.state.configDoc)
-        yyjson_doc_free(instance.state.configDoc); // for `--load-config`
-
-    instance.state.configDoc = doc;
-    return true;
-}
-
-static bool parseConfigFile(FFdata* data, const char* path)
-{
-    FF_AUTO_CLOSE_FILE FILE* file = fopen(path, "r");
-    if(file == NULL)
-        return false;
-
-    char* line = NULL;
-    size_t len = 0;
-    ssize_t read;
-    FF_STRBUF_AUTO_DESTROY unescaped = ffStrbufCreate();
-
-    while ((read = getline(&line, &len, file)) != -1)
-    {
-        char* lineStart = line;
-        char* lineEnd = line + read - 1;
-
-        //Trim line left
-        while(isspace(*lineStart))
-            ++lineStart;
-
-        //Continue if line is empty or a comment
-        if(*lineStart == '\0' || *lineStart == '#')
-            continue;
-
-        //Trim line right
-        while(lineEnd > lineStart && isspace(*lineEnd))
-            --lineEnd;
-        *(lineEnd + 1) = '\0';
-
-        char* valueStart = strchr(lineStart, ' ');
-
-        //If the line has no white space, it is only a key
-        if(valueStart == NULL)
-        {
-            parseOption(data, lineStart, NULL);
-            continue;
-        }
-
-        //separate the key from the value
-        *valueStart = '\0';
-        ++valueStart;
-
-        //Trim space of value left
-        while(isspace(*valueStart))
-            ++valueStart;
-
-        //If we want whitespace in values, we need to quote it. This is done to keep consistency with shell.
-        if((*valueStart == '"' || *valueStart == '\'') && *valueStart == *lineEnd && lineEnd > valueStart)
-        {
-            ++valueStart;
-            *lineEnd = '\0';
-            --lineEnd;
-        }
-
-        if (strchr(valueStart, '\\'))
-        {
-            // Unescape all `\x`s
-            const char* value = valueStart;
-            while(*value != '\0')
-            {
-                if(*value != '\\')
-                {
-                    ffStrbufAppendC(&unescaped, *value);
-                    ++value;
-                    continue;
-                }
-
-                ++value;
-
-                switch(*value)
-                {
-                    case 'n': ffStrbufAppendC(&unescaped, '\n'); break;
-                    case 't': ffStrbufAppendC(&unescaped, '\t'); break;
-                    case 'e': ffStrbufAppendC(&unescaped, '\e'); break;
-                    case '\\': ffStrbufAppendC(&unescaped, '\\'); break;
-                    default:
-                        ffStrbufAppendC(&unescaped, '\\');
-                        ffStrbufAppendC(&unescaped, *value);
-                        break;
-                }
-
-                ++value;
-            }
-            parseOption(data, lineStart, unescaped.chars);
-            ffStrbufClear(&unescaped);
-        }
-        else
-        {
-            parseOption(data, lineStart, valueStart);
-        }
-    }
-
-    if(line != NULL)
-        free(line);
 
     return true;
 }
@@ -446,11 +373,6 @@ static void generateConfigFile(bool force, const char* filePath)
     }
     else
     {
-        if (ffStrEqualsIgnCase(filePath, "conf") || ffStrEqualsIgnCase(filePath, "jsonc"))
-        {
-            fputs("Error: specifying file type is no longer supported\n", stderr);
-            exit(477);
-        }
         ffStrbufSetS(&instance.state.genConfigPath, filePath);
     }
 
@@ -486,19 +408,15 @@ static void optionParseConfigFile(FFdata* data, const char* key, const char* val
     if (ffStrEqualsIgnCase(value, "none"))
         return;
 
-    bool isJsonConfig = fileNameLen > strlen(".jsonc") && strcasecmp(value + fileNameLen - strlen(".jsonc"), ".jsonc") == 0;
+    if (ffStrEndsWithIgnCase(value, ".conf"))
+    {
+        fprintf(stderr, "Error: flag based config files are no longer not supported: %s\n", value);
+        exit(414);
+    }
 
     //Try to load as an absolute path
 
-    if(isJsonConfig ? parseJsoncFile(value) : parseConfigFile(data, value))
-        return;
-
-    {
-        bool success = isJsonConfig ? parseJsoncFile(value) : parseConfigFile(data, value);
-
-        if(success)
-            return;
-    }
+    if (parseJsoncFile(value)) return;
 
     //Try to load as a relative path
 
@@ -510,15 +428,14 @@ static void optionParseConfigFile(FFdata* data, const char* key, const char* val
         ffStrbufAppendS(&absolutePath, "fastfetch/presets/");
         ffStrbufAppendS(&absolutePath, value);
 
-        bool success = isJsonConfig ? parseJsoncFile(absolutePath.chars) : parseConfigFile(data, absolutePath.chars);
+        bool success = parseJsoncFile(absolutePath.chars);
         if (!success)
         {
             ffStrbufAppendS(&absolutePath, ".jsonc");
             success = parseJsoncFile(absolutePath.chars);
         }
 
-        if(success)
-            return;
+        if (success) return;
     }
 
     {
@@ -528,15 +445,14 @@ static void optionParseConfigFile(FFdata* data, const char* key, const char* val
         ffStrbufAppendS(&absolutePath, "/presets/");
         ffStrbufAppendS(&absolutePath, value);
 
-        bool success = isJsonConfig ? parseJsoncFile(absolutePath.chars) : parseConfigFile(data, absolutePath.chars);
+        bool success = parseJsoncFile(absolutePath.chars);
         if (!success)
         {
             ffStrbufAppendS(&absolutePath, ".jsonc");
             success = parseJsoncFile(absolutePath.chars);
         }
 
-        if(success)
-            return;
+        if (success) return;
     }
 
     //File not found
@@ -547,9 +463,8 @@ static void optionParseConfigFile(FFdata* data, const char* key, const char* val
 
 static void printVersion()
 {
-    FFVersionResult result = {};
-    ffDetectVersion(&result);
-    printf("%s %s%s%s (%s)\n", result.projectName, result.version, result.versionTweak, result.debugMode ? "-debug" : "", result.architecture);
+    FFVersionResult* result = &ffVersionResult;
+    printf("%s %s%s%s (%s)\n", result->projectName, result->version, result->versionTweak, result->debugMode ? "-debug" : "", result->architecture);
 }
 
 static void parseCommand(FFdata* data, char* key, char* value)
@@ -674,38 +589,7 @@ static void parseCommand(FFdata* data, char* key, char* value)
 
 static void parseOption(FFdata* data, const char* key, const char* value)
 {
-    if(ffStrEqualsIgnCase(key, "--set") || ffStrEqualsIgnCase(key, "--set-keyless"))
-    {
-        FF_STRBUF_AUTO_DESTROY customValueStr = ffStrbufCreate();
-        ffOptionParseString(key, value, &customValueStr);
-        uint32_t index = ffStrbufFirstIndexC(&customValueStr, '=');
-        if(index == 0 || index == customValueStr.length)
-        {
-            fprintf(stderr, "Error: usage: %s <key>=<str>\n", key);
-            exit(477);
-        }
-
-        FF_STRBUF_AUTO_DESTROY customKey = ffStrbufCreateNS(index, customValueStr.chars);
-
-        FFCustomValue* customValue = NULL;
-        FF_LIST_FOR_EACH(FFCustomValue, x, data->customValues)
-        {
-            if(ffStrbufEqual(&x->key, &customKey))
-            {
-                ffStrbufDestroy(&x->key);
-                ffStrbufDestroy(&x->value);
-                customValue = x;
-                break;
-            }
-        }
-        if(!customValue) customValue = (FFCustomValue*) ffListAdd(&data->customValues);
-        ffStrbufInitMove(&customValue->key, &customKey);
-        ffStrbufSubstrAfter(&customValueStr, index);
-        ffStrbufInitMove(&customValue->value, &customValueStr);
-        customValue->printKey = key[5] == '\0';
-    }
-
-    else if(ffStrEqualsIgnCase(key, "-s") || ffStrEqualsIgnCase(key, "--structure"))
+    if(ffStrEqualsIgnCase(key, "-s") || ffStrEqualsIgnCase(key, "--structure"))
         ffOptionParseString(key, value, &data->structure);
 
     else if(
@@ -723,7 +607,7 @@ static void parseOption(FFdata* data, const char* key, const char* value)
     }
 }
 
-static void parseConfigFiles(FFdata* data)
+static void parseConfigFiles(void)
 {
     if (__builtin_expect(instance.state.genConfigPath.length == 0, true))
     {
@@ -736,15 +620,6 @@ static void parseConfigFiles(FFdata* data)
             ffStrbufSubstrBefore(dir, dirLength);
             if (success) return;
         }
-    }
-    FF_LIST_FOR_EACH(FFstrbuf, dir, instance.state.platform.configDirs)
-    {
-        uint32_t dirLength = dir->length;
-
-        ffStrbufAppendS(dir, "fastfetch/config.conf");
-        bool success = parseConfigFile(data, dir->chars);
-        ffStrbufSubstrBefore(dir, dirLength);
-        if (success) return;
     }
 }
 
@@ -765,7 +640,7 @@ static void parseArguments(FFdata* data, int argc, char** argv, void (*parser)(F
         if(i == argc - 1 || (
             argv[i + 1][0] == '-' &&
             argv[i + 1][1] != '\0' && // `-` is used as an alias for `/dev/stdin`
-            strcasecmp(argv[i], "--separator-string") != 0 // Separator string can start with a -
+            !ffStrEqualsIgnCase(argv[i], "--separator-string") // Separator string can start with a -
         )) {
             parser(data, argv[i], NULL);
         }
@@ -779,27 +654,6 @@ static void parseArguments(FFdata* data, int argc, char** argv, void (*parser)(F
 
 static void run(FFdata* data)
 {
-    if (instance.state.configDoc)
-    {
-        const char* error = NULL;
-
-        yyjson_val* const root = yyjson_doc_get_root(instance.state.configDoc);
-        if (!yyjson_is_obj(root))
-            error = "Invalid JSON config format. Root value must be an object";
-
-        if (
-            error ||
-            (error = ffOptionsParseLogoJsonConfig(&instance.config.logo, root)) ||
-            (error = ffOptionsParseGeneralJsonConfig(&instance.config.general, root)) ||
-            (error = ffOptionsParseDisplayJsonConfig(&instance.config.display, root)) ||
-            (error = ffOptionsParseLibraryJsonConfig(&instance.config.library, root)) ||
-            false
-        ) {
-            fprintf(stderr, "JsonConfig Error: %s\n", error);
-            exit(477);
-        }
-    }
-
     const bool useJsonConfig = data->structure.length == 0 && instance.state.configDoc;
 
     if (useJsonConfig)
@@ -819,10 +673,7 @@ static void run(FFdata* data)
         ffPrintCommandOption(data, instance.state.resultDoc);
 
     if (instance.state.resultDoc)
-    {
-        yyjson_mut_write_fp(stdout, instance.state.resultDoc, YYJSON_WRITE_INF_AND_NAN_AS_NULL | YYJSON_WRITE_PRETTY_TWO_SPACES, NULL, NULL);
-        putchar('\n');
-    }
+        yyjson_mut_write_fp(stdout, instance.state.resultDoc, YYJSON_WRITE_INF_AND_NAN_AS_NULL | YYJSON_WRITE_PRETTY_TWO_SPACES | YYJSON_WRITE_NEWLINE_AT_END, NULL, NULL);
     else
         ffFinish();
 }
@@ -841,11 +692,11 @@ static void writeConfigFile(FFdata* data, const FFstrbuf* filename)
     ffMigrateCommandOptionToJsonc(data, doc);
 
     if (ffStrbufEqualS(filename, "-"))
-        yyjson_mut_write_fp(stdout, doc, YYJSON_WRITE_INF_AND_NAN_AS_NULL | YYJSON_WRITE_PRETTY_TWO_SPACES, NULL, NULL);
+        yyjson_mut_write_fp(stdout, doc, YYJSON_WRITE_INF_AND_NAN_AS_NULL | YYJSON_WRITE_PRETTY_TWO_SPACES | YYJSON_WRITE_NEWLINE_AT_END, NULL, NULL);
     else
     {
         size_t len;
-        FF_AUTO_FREE const char* str = yyjson_mut_write(doc, YYJSON_WRITE_INF_AND_NAN_AS_NULL | YYJSON_WRITE_PRETTY_TWO_SPACES, &len);
+        FF_AUTO_FREE const char* str = yyjson_mut_write(doc, YYJSON_WRITE_INF_AND_NAN_AS_NULL | YYJSON_WRITE_PRETTY_TWO_SPACES | YYJSON_WRITE_NEWLINE_AT_END, &len);
         if (!str)
         {
             printf("Error: failed to generate config file\n");
@@ -866,17 +717,17 @@ static void writeConfigFile(FFdata* data, const FFstrbuf* filename)
 int main(int argc, char** argv)
 {
     ffInitInstance();
+    atexit(ffDestroyInstance);
 
     //Data stores things only needed for the configuration of fastfetch
     FFdata data = {
         .structure = ffStrbufCreate(),
-        .customValues = ffListCreate(sizeof(FFCustomValue)),
         .configLoaded = false,
     };
 
     parseArguments(&data, argc, argv, parseCommand);
     if(!data.configLoaded && !getenv("NO_CONFIG"))
-        parseConfigFiles(&data);
+        parseConfigFiles();
     parseArguments(&data, argc, argv, (void*) parseOption);
 
     if (__builtin_expect(instance.state.genConfigPath.length == 0, true))
@@ -885,12 +736,4 @@ int main(int argc, char** argv)
         writeConfigFile(&data, &instance.state.genConfigPath);
 
     ffStrbufDestroy(&data.structure);
-    FF_LIST_FOR_EACH(FFCustomValue, customValue, data.customValues)
-    {
-        ffStrbufDestroy(&customValue->key);
-        ffStrbufDestroy(&customValue->value);
-    }
-    ffListDestroy(&data.customValues);
-
-    ffDestroyInstance();
 }

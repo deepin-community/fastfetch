@@ -2,6 +2,7 @@ Source: fastfetch
 Section: utils
 Priority: optional
 Maintainer: xiangzelong <xiangzelong@deepin.org>
+Uploaders: Amaro Martínez <xoas@airmail.cc>,
 Build-Depends: debhelper-compat (= 13),
                 libvulkan-dev,
                 libwayland-dev,
@@ -23,13 +24,15 @@ Build-Depends: debhelper-compat (= 13),
                 libchafa-dev,
                 directx-headers-dev,
                 cmake (>=3.12.0),
-                yyjson-dev (>=0.8),
+                yyjson-dev (>=0.9),
+                pkgconf,
 Standards-Version: 4.6.2.0
 Homepage: https://github.com/fastfetch-cli/fastfetch
 
 Package: fastfetch
 Section: utils
 Architecture: any
+Multi-Arch: foreign
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Description: This is a neofetch-like tool for fetching system information and displaying them in a pretty way.
  It is written mainly in C, with performance and customizability in mind.

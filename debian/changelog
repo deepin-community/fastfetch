@@ -1,3 +1,27 @@
+fastfetch (2.23.0-0deepin) unstable; urgency=medium
+
+  * New upstream version
+  * Support unity version detection (DE, Linux)
+  * Print model name in Battery keys if available (Battery)
+  * Add module `Zpool`
+  * Improve performance (Shell / Terminal, Linux)
+  * Support syntax of padded strings in `--<module>-format`. `{variable<padlength}` and `{variable>padlength}` are supported.
+
+ -- Amaro Martínez <xoas@airmail.cc>  Mon, 02 Sep 2024 23:44:25 -0500
+
+fastfetch (2.22.0) UNRELEASED; urgency=medium
+
+  * New upstream version
+  * Small performance improvements (Terminal, Editor)
+  * Improve arm32 and loongarch support (CPU, Linux)
+  * Ignore the parent process if env `$FFTS_IGNORE_PARENT` is set to `1` (Shell)
+  * Add code name of Apple M4 (CPU, Linux)
+  * Add ethernet speed rate detection support (LocalIP)
+  * Add zsh completion script
+  * Add Linglong package manager detection support (Packages, Linux)
+
+ -- Amaro Martínez <xoas@airmail.cc>  Mon, 02 Sep 2024 23:44:25 -0500
+
 fastfetch (2.8.10-0deepin) unstable; urgency=medium
 
   * New upstream version

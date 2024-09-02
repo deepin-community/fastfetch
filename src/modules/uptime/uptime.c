@@ -1,10 +1,11 @@
 #include "common/printing.h"
 #include "common/jsonconfig.h"
+#include "common/time.h"
 #include "detection/uptime/uptime.h"
 #include "modules/uptime/uptime.h"
 #include "util/stringUtils.h"
 
-#define FF_UPTIME_NUM_FORMAT_ARGS 7
+#define FF_UPTIME_NUM_FORMAT_ARGS 6
 
 void ffPrintUptime(FFUptimeOptions* options)
 {
@@ -78,13 +79,12 @@ void ffPrintUptime(FFUptimeOptions* options)
     else
     {
         FF_PRINT_FORMAT_CHECKED(FF_UPTIME_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_UPTIME_NUM_FORMAT_ARGS, ((FFformatarg[]){
-            {FF_FORMAT_ARG_TYPE_UINT, &days},
-            {FF_FORMAT_ARG_TYPE_UINT, &hours},
-            {FF_FORMAT_ARG_TYPE_UINT, &minutes},
-            {FF_FORMAT_ARG_TYPE_UINT, &seconds},
-            {FF_FORMAT_ARG_TYPE_UINT, &milliseconds},
-            {FF_FORMAT_ARG_TYPE_UINT64, &result.uptime},
-            {FF_FORMAT_ARG_TYPE_UINT64, &result.bootTime},
+            {FF_FORMAT_ARG_TYPE_UINT, &days, "days"},
+            {FF_FORMAT_ARG_TYPE_UINT, &hours, "hours"},
+            {FF_FORMAT_ARG_TYPE_UINT, &minutes, "minutes"},
+            {FF_FORMAT_ARG_TYPE_UINT, &seconds, "seconds"},
+            {FF_FORMAT_ARG_TYPE_UINT, &milliseconds, "milliseconds"},
+            {FF_FORMAT_ARG_TYPE_STRING, ffTimeToShortStr(result.uptime), "boot-time"},
         }));
     }
 }
@@ -137,19 +137,18 @@ void ffGenerateUptimeJsonResult(FF_MAYBE_UNUSED FFUptimeOptions* options, yyjson
 
     yyjson_mut_val* obj = yyjson_mut_obj_add_obj(doc, module, "result");
     yyjson_mut_obj_add_uint(doc, obj, "uptime", result.uptime);
-    yyjson_mut_obj_add_uint(doc, obj, "bootTime", result.bootTime);
+    yyjson_mut_obj_add_strcpy(doc, obj, "bootTime", ffTimeToFullStr(result.bootTime));
 }
 
 void ffPrintUptimeHelpFormat(void)
 {
     FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_UPTIME_MODULE_NAME, "{1} days {2} hours {3} mins", FF_UPTIME_NUM_FORMAT_ARGS, ((const char* []) {
-        "Days",
-        "Hours",
-        "Minutes",
-        "Seconds",
-        "Milliseconds",
-        "Uptime in unix timestamp (ms)",
-        "Boot time in unix timestamp (ms)",
+        "Days - days",
+        "Hours - hours",
+        "Minutes - minutes",
+        "Seconds - seconds",
+        "Milliseconds - milliseconds",
+        "Boot time in local timezone - boot-time",
     }));
 }
 
@@ -166,7 +165,7 @@ void ffInitUptimeOptions(FFUptimeOptions* options)
         ffPrintUptimeHelpFormat,
         ffGenerateUptimeJsonConfig
     );
-    ffOptionInitModuleArg(&options->moduleArgs);
+    ffOptionInitModuleArg(&options->moduleArgs, "");
 }
 
 void ffDestroyUptimeOptions(FFUptimeOptions* options)

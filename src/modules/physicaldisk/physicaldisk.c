@@ -23,10 +23,11 @@ static void formatKey(const FFPhysicalDiskOptions* options, FFPhysicalDiskResult
     else
     {
         ffStrbufClear(key);
-        FF_PARSE_FORMAT_STRING_CHECKED(key, &options->moduleArgs.key, 3, ((FFformatarg[]){
-            {FF_FORMAT_ARG_TYPE_UINT, &index},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &dev->name},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &dev->devPath},
+        FF_PARSE_FORMAT_STRING_CHECKED(key, &options->moduleArgs.key, 4, ((FFformatarg[]){
+            {FF_FORMAT_ARG_TYPE_UINT, &index, "index"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &dev->name, "name"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &dev->devPath, "dev-path"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &options->moduleArgs.keyIcon, "icon"},
         }));
     }
 }
@@ -70,7 +71,7 @@ void ffPrintPhysicalDisk(FFPhysicalDiskOptions* options)
 
         if(options->moduleArgs.outputFormat.length == 0)
         {
-            ffPrintLogoAndKey(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT);
+            ffPrintLogoAndKey(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY);
 
             if (physicalType[0] || removableType[0] || readOnlyType[0])
             {
@@ -97,28 +98,27 @@ void ffPrintPhysicalDisk(FFPhysicalDiskOptions* options)
                 if(buffer.length > 0)
                     ffStrbufAppendS(&buffer, " - ");
 
-                ffTempsAppendNum(dev->temperature, &buffer, options->tempConfig);
+                ffTempsAppendNum(dev->temperature, &buffer, options->tempConfig, &options->moduleArgs);
             }
             ffStrbufPutTo(&buffer, stdout);
         }
         else
         {
             FF_STRBUF_AUTO_DESTROY tempStr = ffStrbufCreate();
-            ffTempsAppendNum(dev->temperature, &tempStr, options->tempConfig);
+            ffTempsAppendNum(dev->temperature, &tempStr, options->tempConfig, &options->moduleArgs);
             if (dev->type & FF_PHYSICALDISK_TYPE_READWRITE)
                 readOnlyType = "Read-write";
-            ffParseSize(dev->size, &buffer);
             FF_PRINT_FORMAT_CHECKED(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY, FF_PHYSICALDISK_NUM_FORMAT_ARGS, ((FFformatarg[]){
-                {FF_FORMAT_ARG_TYPE_STRBUF, &buffer},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &dev->name},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &dev->interconnect},
-                {FF_FORMAT_ARG_TYPE_STRING, physicalType},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &dev->devPath},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &dev->serial},
-                {FF_FORMAT_ARG_TYPE_STRING, removableType},
-                {FF_FORMAT_ARG_TYPE_STRING, readOnlyType},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &dev->revision},
-                {FF_FORMAT_ARG_TYPE_DOUBLE, &tempStr},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &buffer, "size"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &dev->name, "name"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &dev->interconnect, "interconnect"},
+                {FF_FORMAT_ARG_TYPE_STRING, physicalType, "type"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &dev->devPath, "dev-path"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &dev->serial, "serial"},
+                {FF_FORMAT_ARG_TYPE_STRING, removableType, "removable-type"},
+                {FF_FORMAT_ARG_TYPE_STRING, readOnlyType, "readonly-type"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &dev->revision, "revision"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &tempStr, "temperature"},
             }));
         }
         ++index;
@@ -252,8 +252,8 @@ void ffGeneratePhysicalDiskJsonResult(FFPhysicalDiskOptions* options, yyjson_mut
 
 void ffPrintPhysicalDiskHelpFormat(void)
 {
-    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_PHYSICALDISK_MODULE_NAME, "{1}", FF_PHYSICALDISK_NUM_FORMAT_ARGS, ((const char* []) {
-        "Device size (formatted)",
+    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_PHYSICALDISK_MODULE_NAME, "{1} [{6}, {7}, {8}]", FF_PHYSICALDISK_NUM_FORMAT_ARGS, ((const char* []) {
+        "Device size (formatted) - ",
         "Device name",
         "Device interconnect type",
         "Device raw file path",
@@ -279,7 +279,7 @@ void ffInitPhysicalDiskOptions(FFPhysicalDiskOptions* options)
         ffPrintPhysicalDiskHelpFormat,
         ffGeneratePhysicalDiskJsonConfig
     );
-    ffOptionInitModuleArg(&options->moduleArgs);
+    ffOptionInitModuleArg(&options->moduleArgs, "󰋊");
 
     ffStrbufInit(&options->namePrefix);
     options->temp = false;

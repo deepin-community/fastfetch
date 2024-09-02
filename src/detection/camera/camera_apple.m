@@ -1,10 +1,32 @@
 #include "camera.h"
+#include "common/io/io.h"
 
 #import <AVFoundation/AVCaptureDevice.h>
 
+// warning: 'AVCaptureDeviceTypeExternalUnknown' is deprecated
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 const char* ffDetectCamera(FFlist* result)
 {
-    AVCaptureDeviceDiscoverySession* session = [AVCaptureDeviceDiscoverySession discoverySessionWithDeviceTypes:@[AVCaptureDeviceTypeBuiltInWideAngleCamera] mediaType:AVMediaTypeVideo position:AVCaptureDevicePositionUnspecified];
+    #ifdef MAC_OS_X_VERSION_10_15
+    FF_SUPPRESS_IO(); // #822
+
+    AVCaptureDeviceType deviceType;
+
+    #ifdef MAC_OS_VERSION_14_0
+    if (@available(macOS 14.0, *))
+    {
+        deviceType = AVCaptureDeviceTypeExternal;
+    }
+    else
+    #endif
+    {
+        deviceType = AVCaptureDeviceTypeExternalUnknown;
+    }
+
+    AVCaptureDeviceDiscoverySession* session = [AVCaptureDeviceDiscoverySession discoverySessionWithDeviceTypes:@[AVCaptureDeviceTypeBuiltInWideAngleCamera, deviceType]
+                                                                                mediaType:AVMediaTypeVideo
+                                                                                position:AVCaptureDevicePositionUnspecified];
     if (!session)
         return "Failed to create AVCaptureDeviceDiscoverySession";
 
@@ -26,6 +48,8 @@ const char* ffDetectCamera(FFlist* result)
         camera->width = size.width < 0 ? 0 : (uint32_t) size.width;
         camera->height = size.height < 0 ? 0 : (uint32_t) size.height;
     }
-
     return NULL;
+    #else
+    return "No support for old MacOS version";
+    #endif
 }

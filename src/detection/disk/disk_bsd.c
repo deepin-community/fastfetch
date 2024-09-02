@@ -3,6 +3,7 @@
 #include "util/stringUtils.h"
 
 #include <sys/mount.h>
+#include <sys/stat.h>
 
 #ifdef __FreeBSD__
 #include <libgeom.h>
@@ -65,6 +66,10 @@ static void detectFsInfo(struct statfs* fs, FFDisk* disk)
 #include <sys/attr.h>
 #include <unistd.h>
 
+#ifndef MAC_OS_X_VERSION_10_15
+    #define MNT_REMOVABLE 0x00000200
+#endif
+
 struct CmnAttrBuf {
     uint32_t       length;
     attrreference_t nameRef;
@@ -89,7 +94,7 @@ void detectFsInfo(struct statfs* fs, FFDisk* disk)
 }
 #endif
 
-const char* ffDetectDisksImpl(FFlist* disks)
+const char* ffDetectDisksImpl(FFDiskOptions* options, FFlist* disks)
 {
     int size = getfsstat(NULL, 0, MNT_WAIT);
 
@@ -102,7 +107,12 @@ const char* ffDetectDisksImpl(FFlist* disks)
 
     for(struct statfs* fs = buf; fs < buf + size; ++fs)
     {
-        if(!ffStrStartsWith(fs->f_mntfromname, "/dev/") && !ffStrEquals(fs->f_fstypename, "zfs"))
+        if(__builtin_expect(options->folders.length, 0))
+        {
+            if(!ffDiskMatchMountpoint(options, fs->f_mntonname))
+                continue;
+        }
+        else if(!ffStrStartsWith(fs->f_mntfromname, "/dev/") && !ffStrEquals(fs->f_fstypename, "zfs"))
             continue;
 
         #ifdef __FreeBSD__
@@ -113,7 +123,7 @@ const char* ffDetectDisksImpl(FFlist* disks)
 
         FFDisk* disk = ffListAdd(disks);
 
-        disk->bytesTotal = fs->f_blocks * fs->f_bsize;
+        disk->bytesTotal = (uint64_t)fs->f_blocks * fs->f_bsize;
         disk->bytesFree = (uint64_t)fs->f_bfree * fs->f_bsize;
         disk->bytesAvailable = (uint64_t)fs->f_bavail * fs->f_bsize;
         disk->bytesUsed = 0; // To be filled in ./disk.c
@@ -126,10 +136,16 @@ const char* ffDetectDisksImpl(FFlist* disks)
         ffStrbufInitS(&disk->filesystem, fs->f_fstypename);
         ffStrbufInit(&disk->name);
         disk->type = 0;
+        disk->createTime = 0;
+
         detectFsInfo(fs, disk);
 
         if(fs->f_flags & MNT_RDONLY)
             disk->type |= FF_DISK_VOLUME_TYPE_READONLY_BIT;
+
+        struct stat st;
+        if(stat(fs->f_mntonname, &st) == 0 && st.st_birthtimespec.tv_sec > 0)
+            disk->createTime = (uint64_t)((st.st_birthtimespec.tv_sec * 1000) + (st.st_birthtimespec.tv_nsec / 1000000));
     }
 
     return NULL;

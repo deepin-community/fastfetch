@@ -34,11 +34,14 @@ static void getExePath(FFPlatform* platform)
             exePathLen = 0;
         else
             exePathLen--; // remove terminating NUL
+    #else
+        ssize_t exePathLen = readlink("/proc/self/path/a.out", exePath, sizeof(exePath) - 1);
+        exePath[exePathLen] = '\0';
     #endif
     if (exePathLen > 0)
     {
         ffStrbufEnsureFree(&platform->exePath, PATH_MAX);
-        if (realpath(platform->exePath.chars, exePath))
+        if (realpath(exePath, platform->exePath.chars))
             ffStrbufRecalculateLength(&platform->exePath);
         else
             ffStrbufSetNS(&platform->exePath, (uint32_t) exePathLen, exePath);
@@ -166,13 +169,19 @@ static void getUserShell(FFPlatform* platform, const struct passwd* pwd)
     ffStrbufAppendS(&platform->userShell, shell);
 }
 
-static void getPageSize(FFPlatform* platform)
+static void getSysinfo(FFPlatformSysinfo* info, const struct utsname* uts)
 {
+    ffStrbufAppendS(&info->name, uts->sysname);
+    ffStrbufAppendS(&info->release, uts->release);
+    ffStrbufAppendS(&info->version, uts->version);
+    ffStrbufAppendS(&info->architecture, uts->machine);
+    ffStrbufInit(&info->displayVersion);
+
     #if defined(__FreeBSD__) || defined(__APPLE__)
-    size_t length = sizeof(platform->pageSize);
-    sysctl((int[]){ CTL_HW, HW_PAGESIZE }, 2, &platform->pageSize, &length, NULL, 0);
+    size_t length = sizeof(info->pageSize);
+    sysctl((int[]){ CTL_HW, HW_PAGESIZE }, 2, &info->pageSize, &length, NULL, 0);
     #else
-    platform->pageSize = (uint32_t) sysconf(_SC_PAGESIZE);
+    info->pageSize = (uint32_t) sysconf(_SC_PAGESIZE);
     #endif
 }
 
@@ -181,7 +190,7 @@ void ffPlatformInitImpl(FFPlatform* platform)
     struct passwd* pwd = getpwuid(getuid());
 
     struct utsname uts;
-    if(uname(&uts) != 0)
+    if(uname(&uts) < 0)
         memset(&uts, 0, sizeof(uts));
 
     getExePath(platform);
@@ -194,11 +203,5 @@ void ffPlatformInitImpl(FFPlatform* platform)
     getHostName(platform, &uts);
     getUserShell(platform, pwd);
 
-    ffStrbufAppendS(&platform->systemName, uts.sysname);
-    ffStrbufAppendS(&platform->systemRelease, uts.release);
-    ffStrbufAppendS(&platform->systemVersion, uts.version);
-    ffStrbufAppendS(&platform->systemArchitecture, uts.machine);
-    ffStrbufInit(&platform->systemDisplayVersion);
-
-    getPageSize(platform);
+    getSysinfo(&platform->sysinfo, &uts);
 }
