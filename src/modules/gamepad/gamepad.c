@@ -5,7 +5,7 @@
 #include "modules/gamepad/gamepad.h"
 #include "util/stringUtils.h"
 
-#define FF_GAMEPAD_NUM_FORMAT_ARGS 3
+#define FF_GAMEPAD_NUM_FORMAT_ARGS 4
 
 static void printDevice(FFGamepadOptions* options, const FFGamepadDevice* device, uint8_t index)
 {
@@ -19,19 +19,22 @@ static void printDevice(FFGamepadOptions* options, const FFGamepadDevice* device
         {
             if (buffer.length)
                 ffStrbufAppendC(&buffer, ' ');
-            ffPercentAppendNum(&buffer, device->battery, options->percent, buffer.length > 0);
+            ffPercentAppendNum(&buffer, device->battery, options->percent, buffer.length > 0, &options->moduleArgs);
         }
         ffStrbufPutTo(&buffer, stdout);
     }
     else
     {
-        FF_STRBUF_AUTO_DESTROY percentageStr = ffStrbufCreate();
-        ffPercentAppendNum(&percentageStr, device->battery, options->percent, false);
+        FF_STRBUF_AUTO_DESTROY percentageNum = ffStrbufCreate();
+        ffPercentAppendNum(&percentageNum, device->battery, options->percent, false, &options->moduleArgs);
+        FF_STRBUF_AUTO_DESTROY percentageBar = ffStrbufCreate();
+        ffPercentAppendBar(&percentageBar, device->battery, options->percent, &options->moduleArgs);
 
         FF_PRINT_FORMAT_CHECKED(FF_GAMEPAD_MODULE_NAME, index, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_GAMEPAD_NUM_FORMAT_ARGS, ((FFformatarg[]) {
-            {FF_FORMAT_ARG_TYPE_STRBUF, &device->name},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &device->serial},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &percentageStr},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &device->name, "name"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &device->serial, "serial"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &percentageNum, "battery-percentage"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &percentageBar, "battery-percentage-bar"},
         }));
     }
 }
@@ -118,12 +121,6 @@ void ffGenerateGamepadJsonResult(FF_MAYBE_UNUSED FFGamepadOptions* options, yyjs
         return;
     }
 
-    if(!result.length)
-    {
-        yyjson_mut_obj_add_str(doc, module, "error", "No devices detected");
-        return;
-    }
-
     yyjson_mut_val* arr = yyjson_mut_obj_add_arr(doc, module, "result");
     FF_LIST_FOR_EACH(FFGamepadDevice, device, result)
     {
@@ -142,9 +139,10 @@ void ffGenerateGamepadJsonResult(FF_MAYBE_UNUSED FFGamepadOptions* options, yyjs
 void ffPrintGamepadHelpFormat(void)
 {
     FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_GAMEPAD_MODULE_NAME, "{1} ({3})", FF_GAMEPAD_NUM_FORMAT_ARGS, ((const char* []) {
-        "Name",
-        "Serial number",
-        "Battery percentage",
+        "Name - name",
+        "Serial number - serial",
+        "Battery percentage num - battery-percentage",
+        "Battery percentage bar - battery-percentage-bar",
     }));
 }
 
@@ -161,7 +159,7 @@ void ffInitGamepadOptions(FFGamepadOptions* options)
         ffPrintGamepadHelpFormat,
         ffGenerateGamepadJsonConfig
     );
-    ffOptionInitModuleArg(&options->moduleArgs);
+    ffOptionInitModuleArg(&options->moduleArgs, "󰺵");
     options->percent = (FFColorRangeConfig) { 50, 20 };
 }
 

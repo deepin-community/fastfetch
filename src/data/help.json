@@ -51,6 +51,18 @@
         {
             "long": "print-structure",
             "desc": "Print the default structure"
+        },
+        {
+            "long": "format",
+            "desc": "Set output format",
+            "arg": {
+                "type": "enum",
+                "enum": {
+                    "default": "Default format",
+                    "json": "JSON format"
+                },
+                "default": "default"
+            }
         }
     ],
     "Config": [
@@ -136,13 +148,23 @@
                     "false": "Try `wayland`, then `x11`, then `drm`"
                 }
             }
+        },
+        {
+            "long": "detect-version",
+            "desc": "Whether to detect and display the version of terminal, shell and editor",
+            "remark": "Mainly for benchmarking",
+            "arg": {
+                "type": "bool",
+                "optional": true,
+                "default": true
+            }
         }
     ],
     "Logo": [
         {
             "short": "l",
             "long": "logo",
-            "desc": "Set the logo source",
+            "desc": "Set the logo source. Use \"none\" to disable the logo",
             "remark": "Should be the name of a builtin logo, or a path to an image file. See also https://github.com/fastfetch-cli/fastfetch/wiki/Logo-options",
             "arg": {
                 "type": "logo"
@@ -245,12 +267,15 @@
             }
         },
         {
-            "long": "logo-separate",
-            "desc": "If true, print modules at bottom of the logo",
+            "long": "logo-position",
+            "desc": "Set the position of the logo should be displayed",
             "arg": {
-                "type": "bool",
-                "optional": true,
-                "default": false
+                "type": "enum",
+                "enum": {
+                    "left": "Left",
+                    "top": "Top",
+                    "right": "Right"
+                }
             }
         },
         {
@@ -426,7 +451,7 @@
         },
         {
             "long": "pipe",
-            "desc": "Disable logo and all escape sequences",
+            "desc": "Disable colors",
             "remark": "Auto detection based on isatty(1)",
             "arg": {
                 "type": "bool",
@@ -436,7 +461,7 @@
         {
             "long": "color-keys",
             "desc": "Set the color of the keys",
-            "remark": "See `-h color` for the list of available colors",
+            "remark": "Doesn't affect module Title, Separator and Colors. See `-h color` for the list of available colors",
             "arg": {
                 "type": "color"
             }
@@ -444,6 +469,22 @@
         {
             "long": "color-title",
             "desc": "Set the color of the title",
+            "remark": "See `-h color` for the list of available colors",
+            "arg": {
+                "type": "color"
+            }
+        },
+        {
+            "long": "color-output",
+            "desc": "Set the color of module output",
+            "remark": "See `-h color` for the list of available colors",
+            "arg": {
+                "type": "color"
+            }
+        },
+        {
+            "long": "color-separator",
+            "desc": "Set the color of the key-value separator",
             "remark": "See `-h color` for the list of available colors",
             "arg": {
                 "type": "color"
@@ -465,6 +506,27 @@
             }
         },
         {
+            "long": "key-padding-left",
+            "desc": "Set the left padding of keys to <num> characters",
+            "arg": {
+                "type": "num"
+            }
+        },
+        {
+            "long": "key-type",
+            "desc": "Set whether to show icon before string keys",
+            "arg": {
+                "type": "enum",
+                "enum": {
+                    "none": "Disable keys",
+                    "string": "Show string",
+                    "icon": "Show icon (requires newest nerd font)",
+                    "both": "Show both icon and string"
+                },
+                "default": "string"
+            }
+        },
+        {
             "long": "bright-color",
             "desc": "Set if the keys, title and ASCII logo should be printed in bright color",
             "arg": {
@@ -479,22 +541,6 @@
             "arg": {
                 "type": "str",
                 "default": ": "
-            }
-        },
-        {
-            "long": "set",
-            "desc": "Hard set the value of a key",
-            "remark": "Deprecated. Use \"Custom\" module instead",
-            "arg": {
-                "type": "key=value"
-            }
-        },
-        {
-            "long": "set-keyless",
-            "desc": "Hard set the value of a key, but don't print the key or the separator",
-            "remark": "Deprecated. Use \"Custom\" module instead",
-            "arg": {
-                "type": "key=value"
             }
         },
         {
@@ -521,20 +567,7 @@
             "arg": {
                 "type": "bool",
                 "optional": true,
-                "default": true
-            }
-        },
-        {
-            "long": "binary-prefix",
-            "desc": "Set the binary prefix to used",
-            "arg": {
-                "type": "enum",
-                "enum": {
-                    "IEC": "1024 Bytes = 1 KiB, 1024 KiB = 1 MiB, ...",
-                    "SI": "1000 Bytes = 1 KB, 1000 KB = 1 MB, ...",
-                    "JEDEC": "1024 Bytes = 1 kB, 1024 kB = 1 MB, ..."
-                },
-                "default": "IEC"
+                "default": false
             }
         },
         {
@@ -542,10 +575,11 @@
             "desc": "Set the percentage output type",
             "remark": [
                 "1 for percentage number",
-                "2 for bar",
+                "2 for multi-color bar",
                 "3 for both",
                 "6 for bar only",
-                "9 for colored number"
+                "9 for colored number",
+                "10 for monochrome bar"
             ],
             "arg": {
                 "type": "num",
@@ -604,20 +638,27 @@
             }
         },
         {
+            "long": "bar-border-left",
+            "desc": "Set the string to use at left border of percentage bars",
+            "arg": {
+                "type": "string",
+                "default": "[ "
+            }
+        },
+        {
+            "long": "bar-border-right",
+            "desc": "Set the string to use at right border of percentage bars",
+            "arg": {
+                "type": "string",
+                "default": " ]"
+            }
+        },
+        {
             "long": "bar-width",
             "desc": "Set the width of percentage bars, in number of characters",
             "arg": {
                 "type": "num",
                 "default": 10
-            }
-        },
-        {
-            "long": "bar-border",
-            "desc": "Whether to show a border around percentage bars",
-            "arg": {
-                "type": "bool",
-                "optional": true,
-                "default": true
             }
         },
         {
@@ -637,6 +678,19 @@
             }
         },
         {
+            "long": "size-binary-prefix",
+            "desc": "Set the binary prefix to used when formatting sizes",
+            "arg": {
+                "type": "enum",
+                "enum": {
+                    "IEC": "1024 Bytes = 1 KiB, 1024 KiB = 1 MiB, ...",
+                    "SI": "1000 Bytes = 1 KB, 1000 KB = 1 MB, ...",
+                    "JEDEC": "1024 Bytes = 1 kB, 1024 kB = 1 MB, ..."
+                },
+                "default": "IEC"
+            }
+        },
+        {
             "long": "size-max-prefix",
             "desc": "Set the largest binary prefix to use when formatting sizes",
             "arg": {
@@ -653,6 +707,14 @@
                     "YB": "YiB"
                 },
                 "default": "YB"
+            }
+        },
+        {
+            "long": "freq-ndigits",
+            "desc": "Set the number of digits to keep after the decimal point when printing CPU / GPU frequency in GHz",
+            "arg": {
+                "type": "num",
+                "default": 2
             }
         },
         {
@@ -705,13 +767,6 @@
         }
     ],
     "Library path": [
-        {
-            "long": "lib-pci",
-            "desc": "Pciutils. Used for GPU output",
-            "arg": {
-                "type": "path"
-            }
-        },
         {
             "long": "lib-vulkan",
             "desc": "Vulkan module & fallback for GPU output",
@@ -880,6 +935,13 @@
             "arg": {
                 "type": "path"
             }
+        },
+        {
+            "long": "lib-elf",
+            "desc": "Used for st terminal font detection and systemd version detection",
+            "arg": {
+                "type": "path"
+            }
         }
     ],
     "Module specific": [
@@ -921,23 +983,33 @@
         },
         {
             "long": "separator-string",
-            "desc": "Set the string printed by the separator module",
+            "desc": "Set the string to be printed by the separator line",
             "arg": {
                 "type": "str",
                 "default": "-"
             }
         },
         {
-            "long": "os-file",
-            "desc": "Set the additional file path which containing OS information",
-            "remark": "Linux only",
+            "long": "separator-output-color",
+            "desc": "Set the color of the separator line",
             "arg": {
-                "type": "path"
+                "type": "color",
+                "default": "default"
+            }
+        },
+        {
+            "long": "separator-length",
+            "desc": "Set the length of the separator line",
+            "remark": "Set to 0 to automatically calculate it with the title length",
+            "arg": {
+                "type": "num",
+                "default": "0"
             }
         },
         {
             "long": "disk-folders",
-            "desc": "A colon (semicolon on Windows) separated list of folder paths for the disk output",
+            "desc": "A colon (semicolon on Windows) separated list of folder paths to be detected",
+            "remark": "On Windows, a drive latter must be upper cased and end with \"\\\". \"/\" is used as an alias of the system drive. This option overrides other disk-show-* options",
             "arg": {
                 "type": "path",
                 "default": "Auto detection using mount-points"
@@ -1142,11 +1214,21 @@
             }
         },
         {
-            "long": "cpu-freq-ndigits",
-            "desc": "Set the number of digits to keep after the decimal point when printing CPU frequency",
+            "long": "cpu-show-pe-core-count",
+            "desc": "Detect and display CPU frequency of different core types (eg. Pcore and Ecore) if supported",
             "arg": {
-                "type": "num",
-                "default": 2
+                "type": "bool",
+                "optional": true,
+                "default": false
+            }
+        },
+        {
+            "long": "cpucache-compact",
+            "desc": "Show all CPU caches in one line",
+            "arg": {
+                "type": "bool",
+                "optional": true,
+                "default": false
             }
         },
         {
@@ -1194,13 +1276,19 @@
             }
         },
         {
-            "long": "gpu-force-vulkan",
-            "desc": "Force using vulkan to detect GPUs",
-            "remark": "Vulkan supports video memory usage detection",
+            "long": "gpu-detection-method",
+            "desc": "Force using a specified method to detect GPUs",
+            "remark": "Will fall back to next methods if the specified method fails",
             "arg": {
-                "type": "bool",
-                "optional": true,
-                "default": false
+                "type": "enum",
+                "enum": {
+                    "auto": "Query platform specific graphic APIs. Requires proper GPU drivers installed. Not supported on FreeBSD",
+                    "pci": "Search PCI devices, which do not requires GPU driver installed. Not supported on Windows and macOS",
+                    "vulkan": "Use Vulkan API. Slow and requires proper vulkan driver installed. Used for Android",
+                    "opencl": "Use OpenCL API. Slow and requires proper OpenCL driver installed",
+                    "opengl": "Use OpenGL API. Slow and only detects one GPU"
+                },
+                "default": "auto"
             }
         },
         {
@@ -1223,6 +1311,23 @@
                 "type": "bool",
                 "optional": true,
                 "default": false
+            }
+        },
+        {
+            "long": "loadavg-ndigits",
+            "desc": "Set the number of digits to keep after the decimal point when printing load average",
+            "arg": {
+                "type": "num",
+                "default": 2
+            }
+        },
+        {
+            "long": "loadavg-compact",
+            "desc": "Show load average values in one line",
+            "arg": {
+                "type": "bool",
+                "optional": true,
+                "default": true
             }
         },
         {
@@ -1262,6 +1367,15 @@
             }
         },
         {
+            "long": "localip-show-prefix-len",
+            "desc": "Show network prefix length (/N) in local ip module",
+            "arg": {
+                "type": "bool",
+                "optional": true,
+                "default": true
+            }
+        },
+        {
             "long": "localip-name-prefix",
             "desc": "Show interfaces with given interface name prefix only",
             "arg": {
@@ -1279,12 +1393,34 @@
             }
         },
         {
+            "long": "localip-show-all-ips",
+            "desc": "Show all IPs bound to the same interface. By default only the first IP is shown",
+            "arg": {
+                "type": "bool",
+                "optional": true,
+                "default": false
+            }
+        },
+        {
             "long": "localip-compact",
             "desc": "Show all IPs in one line",
             "arg": {
                 "type": "bool",
                 "optional": true,
                 "default": false
+            }
+        },
+        {
+            "long": "dns-show-type",
+            "desc": "Specify the type of DNS servers should be detected",
+            "arg": {
+                "type": "enum",
+                "enum": {
+                    "ipv4": "Show IPv4 addresses only",
+                    "ipv6": "Show IPv6 addresses only",
+                    "both": "Show both IPv4 and IPv6 addresses"
+                },
+                "default": "both"
             }
         },
         {
@@ -1329,6 +1465,14 @@
             }
         },
         {
+            "long": "publicip-ipv6",
+            "desc": "Whether to use IPv6 for public IP detection server",
+            "arg": {
+                "type": "bool",
+                "default": false
+            }
+        },
+        {
             "long": "weather-location",
             "desc": "Set the location to be used",
             "remark": "Must be URI encoded (e.g. a whitespace must be encoded as \"+\")",
@@ -1356,6 +1500,24 @@
         {
             "long": "wm-detect-plugin",
             "desc": "Set if window manager plugin should be detected on supported platforms",
+            "arg": {
+                "type": "bool",
+                "optional": true,
+                "default": false
+            }
+        },
+        {
+            "long": "users-compact",
+            "desc": "Show all active users in one line",
+            "arg": {
+                "type": "bool",
+                "optional": true,
+                "default": false
+            }
+        },
+        {
+            "long": "users-myself-only",
+            "desc": "Show only current user",
             "arg": {
                 "type": "bool",
                 "optional": true,
@@ -1413,13 +1575,14 @@
                 "type": "enum",
                 "enum": {
                     "block": "\u2588\u2588\u2588",
+                    "background": "(whitespaces with background)",
                     "circle": "\u25cf",
                     "diamond": "\u25c6",
                     "triangle": "\u25b2",
                     "square": "\u25a0",
                     "star": "\u2605"
                 },
-                "default": "block"
+                "default": "background"
             }
         },
         {
@@ -1497,6 +1660,22 @@
         {
             "long": "<module>-key-color",
             "desc": "Override the global \"--color-keys\" option for each specific module",
+            "arg": {
+                "type": "color"
+            },
+            "pseudo": true
+        },
+        {
+            "long": "<module>-key-icon",
+            "desc": "Set the icon to be displayed by \"--key-type icon\"",
+            "arg": {
+                "type": "string"
+            },
+            "pseudo": true
+        },
+        {
+            "long": "<module>-output-color",
+            "desc": "Override the global \"--color-output\" option for each specific module",
             "arg": {
                 "type": "color"
             },

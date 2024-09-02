@@ -57,14 +57,14 @@ void ffPrintTitle(FFTitleOptions* options)
     else
     {
         FF_PRINT_FORMAT_CHECKED(FF_TITLE_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_TITLE_NUM_FORMAT_ARGS, ((FFformatarg[]){
-            {FF_FORMAT_ARG_TYPE_STRBUF, &instance.state.platform.userName},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &hostName},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &instance.state.platform.homeDir},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &instance.state.platform.exePath},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &instance.state.platform.userShell},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &userNameColored},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &atColored},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &hostNameColored},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &instance.state.platform.userName, "user-name"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &hostName, "host-name"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &instance.state.platform.homeDir, "home-dir"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &instance.state.platform.exePath, "exe-path"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &instance.state.platform.userShell, "user-shell"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &userNameColored, "user-name-colored"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &atColored, "at-symbol-colored"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &hostNameColored, "host-name-colored"},
         }));
     }
 }
@@ -176,20 +176,19 @@ void ffGenerateTitleJsonResult(FF_MAYBE_UNUSED FFTitleOptions* options, yyjson_m
     yyjson_mut_obj_add_strbuf(doc, obj, "homeDir", &instance.state.platform.homeDir);
     yyjson_mut_obj_add_strbuf(doc, obj, "exePath", &instance.state.platform.exePath);
     yyjson_mut_obj_add_strbuf(doc, obj, "userShell", &instance.state.platform.userShell);
-    yyjson_mut_obj_add_uint(doc, obj, "pageSize", instance.state.platform.pageSize);
 }
 
 void ffPrintTitleHelpFormat(void)
 {
     FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_TITLE_MODULE_NAME, "{6}{7}{8}", FF_TITLE_NUM_FORMAT_ARGS, ((const char* []) {
-        "User name",
-        "Host name",
-        "Home directory",
-        "Executable path of current process",
-        "User's default shell",
-        "User name (colored)",
-        "@ symbol (colored)",
-        "Host name (colored)"
+        "User name - user-name",
+        "Host name - host-name",
+        "Home directory - home-dir",
+        "Executable path of current process - exe-path",
+        "User's default shell - user-shell",
+        "User name (colored) - user-name-colored",
+        "@ symbol (colored) - at-symbol-colored",
+        "Host name (colored) - host-name-colored",
     }));
 }
 
@@ -206,7 +205,7 @@ void ffInitTitleOptions(FFTitleOptions* options)
         ffPrintTitleHelpFormat,
         ffGenerateTitleJsonConfig
     );
-    ffOptionInitModuleArg(&options->moduleArgs);
+    ffOptionInitModuleArg(&options->moduleArgs, "");
     ffStrbufSetStatic(&options->moduleArgs.key, " ");
 
     options->fqdn = false;

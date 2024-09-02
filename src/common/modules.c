@@ -8,7 +8,9 @@ static FFModuleBaseInfo* B[] = {
     (void*) &instance.config.modules.battery,
     (void*) &instance.config.modules.bios,
     (void*) &instance.config.modules.bluetooth,
+    (void*) &instance.config.modules.bluetoothRadio,
     (void*) &instance.config.modules.board,
+    (void*) &instance.config.modules.bootmgr,
     (void*) &instance.config.modules.break_,
     (void*) &instance.config.modules.brightness,
     NULL,
@@ -20,6 +22,7 @@ static FFModuleBaseInfo* C[] = {
     (void*) &instance.config.modules.command,
     (void*) &instance.config.modules.colors,
     (void*) &instance.config.modules.cpu,
+    (void*) &instance.config.modules.cpuCache,
     (void*) &instance.config.modules.cpuUsage,
     (void*) &instance.config.modules.cursor,
     (void*) &instance.config.modules.custom,
@@ -32,10 +35,12 @@ static FFModuleBaseInfo* D[] = {
     (void*) &instance.config.modules.display,
     (void*) &instance.config.modules.disk,
     (void*) &instance.config.modules.diskIo,
+    (void*) &instance.config.modules.dns,
     NULL,
 };
 
 static FFModuleBaseInfo* E[] = {
+    (void*) &instance.config.modules.editor,
     NULL,
 };
 
@@ -57,6 +62,7 @@ static FFModuleBaseInfo* H[] = {
 
 static FFModuleBaseInfo* I[] = {
     (void*) &instance.config.modules.icons,
+    (void*) &instance.config.modules.initSystem,
     NULL,
 };
 
@@ -71,6 +77,7 @@ static FFModuleBaseInfo* K[] = {
 
 static FFModuleBaseInfo* L[] = {
     (void*) &instance.config.modules.lm,
+    (void*) &instance.config.modules.loadavg,
     (void*) &instance.config.modules.locale,
     (void*) &instance.config.modules.localIP,
     NULL,
@@ -98,6 +105,7 @@ static FFModuleBaseInfo* O[] = {
 static FFModuleBaseInfo* P[] = {
     (void*) &instance.config.modules.packages,
     (void*) &instance.config.modules.physicalDisk,
+    (void*) &instance.config.modules.physicalMemory,
     (void*) &instance.config.modules.player,
     (void*) &instance.config.modules.powerAdapter,
     (void*) &instance.config.modules.processes,

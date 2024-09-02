@@ -5,6 +5,9 @@
 #include "util/stringUtils.h"
 
 #include <ctype.h>
+#ifdef __FreeBSD__
+    #include <paths.h>
+#endif
 
 #ifdef _WIN32
 
@@ -197,65 +200,48 @@ static bool getShellVersionWinPowerShell(FFstrbuf* exe, FFstrbuf* version)
         NULL
     }) == NULL;
 }
-#else
-static bool getShellVersionGeneric(FFstrbuf* exe, const char* exeName, FFstrbuf* version)
-{
-    FF_STRBUF_AUTO_DESTROY command = ffStrbufCreate();
-    ffStrbufAppendS(&command, "printf \"%s\" \"$");
-    ffStrbufAppendTransformS(&command, exeName, toupper);
-    ffStrbufAppendS(&command, "_VERSION\"");
-
-    if (ffProcessAppendStdOut(version, (char* const[]) {
-        "env",
-        "-i",
-        exe->chars,
-        "-c",
-        command.chars,
-        NULL
-    }) != NULL)
-        return false;
-
-    ffStrbufSubstrBeforeFirstC(version, '(');
-    ffStrbufRemoveStrings(version, 2, (const char*[]) { "-release", "release" });
-    return true;
-}
 #endif
 
 bool fftsGetShellVersion(FFstrbuf* exe, const char* exeName, FFstrbuf* version)
 {
-    if(strcasecmp(exeName, "bash") == 0 || strcasecmp(exeName, "sh") == 0)
+    if (!instance.config.general.detectVersion) return false;
+
+    if(ffStrEqualsIgnCase(exeName, "sh")) // #849
+        return false;
+
+    if(ffStrEqualsIgnCase(exeName, "bash"))
         return getShellVersionBash(exe, version);
-    if(strcasecmp(exeName, "zsh") == 0)
+    if(ffStrEqualsIgnCase(exeName, "zsh"))
         return getExeVersionGeneral(exe, version); //zsh 5.9 (arm-apple-darwin21.3.0)
-    if(strcasecmp(exeName, "fish") == 0)
+    if(ffStrEqualsIgnCase(exeName, "fish"))
         return getShellVersionFish(exe, version);
-    if(strcasecmp(exeName, "pwsh") == 0)
+    if(ffStrEqualsIgnCase(exeName, "pwsh"))
         return getShellVersionPwsh(exe, version);
-    if(strcasecmp(exeName, "csh") == 0 || strcasecmp(exeName, "tcsh") == 0)
+    if(ffStrEqualsIgnCase(exeName, "csh") || ffStrEqualsIgnCase(exeName, "tcsh"))
         return getExeVersionGeneral(exe, version); //tcsh 6.24.07 (Astron) 2022-12-21 (aarch64-apple-darwin) options wide,nls,dl,al,kan,sm,rh,color,filec
-    if(strcasecmp(exeName, "nu") == 0)
+    if(ffStrEqualsIgnCase(exeName, "nu"))
         return getShellVersionNushell(exe, version);
-    if(strcasecmp(exeName, "ksh") == 0)
+    if(ffStrEqualsIgnCase(exeName, "ksh"))
         return getShellVersionKsh(exe, version);
-    if(strcasecmp(exeName, "oksh") == 0)
+    if(ffStrEqualsIgnCase(exeName, "oksh"))
         return getShellVersionOksh(exe, version);
-    if(strcasecmp(exeName, "oil.ovm") == 0)
+    if(ffStrEqualsIgnCase(exeName, "oil.ovm"))
         return getShellVersionOils(exe, version);
-    if(strcasecmp(exeName, "elvish") == 0)
+    if(ffStrEqualsIgnCase(exeName, "elvish"))
         return getExeVersionRaw(exe, version);
-    if(strcasecmp(exeName, "ash") == 0)
+    if(ffStrEqualsIgnCase(exeName, "ash"))
         return getShellVersionAsh(exe, version);
-    if(strcasecmp(exeName, "xonsh") == 0)
+    if(ffStrEqualsIgnCase(exeName, "xonsh"))
         return getShellVersionXonsh(exe, version);
 
     #ifdef _WIN32
-    if(strcasecmp(exeName, "powershell") == 0 || strcasecmp(exeName, "powershell_ise") == 0)
+    if(ffStrEqualsIgnCase(exeName, "powershell") || ffStrEqualsIgnCase(exeName, "powershell_ise"))
         return getShellVersionWinPowerShell(exe, version);
 
     return getFileVersion(exe->chars, version);
-    #else
-    return getShellVersionGeneric(exe, exeName, version);
     #endif
+
+    return false;
 }
 
 FF_MAYBE_UNUSED static bool getTerminalVersionTermux(FFstrbuf* version)
@@ -344,11 +330,15 @@ FF_MAYBE_UNUSED static bool getTerminalVersionCockpit(FFstrbuf* exe, FFstrbuf* v
 
 FF_MAYBE_UNUSED static bool getTerminalVersionXterm(FFstrbuf* exe, FFstrbuf* version)
 {
-    if(ffProcessAppendStdOut(version, (char* const[]){
-        exe->chars,
-        "-v",
-        NULL
-    })) return false;
+    ffStrbufSetS(version, getenv("XTERM_VERSION"));
+    if (!version->length)
+    {
+        if(ffProcessAppendStdOut(version, (char* const[]){
+            exe->chars,
+            "-v",
+            NULL
+        })) return false;
+    }
 
     //xterm(273)
     ffStrbufTrimRight(version, ')');
@@ -400,6 +390,29 @@ FF_MAYBE_UNUSED static bool getTerminalVersionSt(FF_MAYBE_UNUSED FFstrbuf* exe, 
     return version->length > 0;
 }
 
+FF_MAYBE_UNUSED static bool getTerminalVersionLxterminal(FFstrbuf* exe, FFstrbuf* version)
+{
+    if(!getExeVersionRaw(exe, version)) return false;
+    // lxterminal 0.3.2
+    ffStrbufSubstrAfterFirstC(version, ' ');
+    return version->length > 0;
+}
+
+FF_MAYBE_UNUSED static bool getTerminalVersionWeston(FF_MAYBE_UNUSED FFstrbuf* exe, FFstrbuf* version)
+{
+    // weston-terminal doesn't report a version, use weston version instead
+    if(ffProcessAppendStdOut(version, (char* const[]){
+        "weston",
+        "--version",
+        NULL
+    })) return false;
+
+    //weston 8.0.0
+    ffStrbufSubstrAfterFirstC(version, ' ');
+
+    return version->length > 0;
+}
+
 static bool getTerminalVersionContour(FFstrbuf* exe, FFstrbuf* version)
 {
     const char* env = getenv("TERMINAL_VERSION_STRING");
@@ -410,7 +423,7 @@ static bool getTerminalVersionContour(FFstrbuf* exe, FFstrbuf* version)
     }
     if(!getExeVersionRaw(exe, version)) return false;
     // Contour Terminal Emulator 0.3.12.262
-    ffStrbufSubstrAfterFirstC(version, ' ');
+    ffStrbufSubstrAfterLastC(version, ' ');
     return version->length > 0;
 }
 
@@ -446,6 +459,94 @@ static bool getTerminalVersionZellij(FFstrbuf* exe, FFstrbuf* version)
     return version->length > 0;
 }
 
+static bool getTerminalVersionZed(FFstrbuf* exe, FFstrbuf* version)
+{
+    FF_STRBUF_AUTO_DESTROY cli = ffStrbufCreateCopy(exe);
+    ffStrbufSubstrBeforeLastC(&cli, '/');
+    ffStrbufAppendS(&cli, "/cli"
+        #ifdef _WIN32
+            ".exe"
+        #endif
+    );
+
+    if(ffProcessAppendStdOut(version, (char* const[]) {
+        cli.chars,
+        "--version",
+        NULL
+    }) != NULL)
+        return false;
+
+    // Zed 0.142.6 – /Applications/Zed.app
+    ffStrbufSubstrAfterFirstC(version, ' ');
+    ffStrbufSubstrBeforeFirstC(version, ' ');
+    return true;
+}
+
+#ifndef _WIN32
+static bool getTerminalVersionKitty(FFstrbuf* exe, FFstrbuf* version)
+{
+    #if defined(__linux__) || defined(__FreeBSD__)
+    char buffer[1024] = {};
+    if (
+        #ifdef __linux__
+        ffReadFileData(FASTFETCH_TARGET_DIR_USR "/lib64/kitty/kitty/constants.py", sizeof(buffer) - 1, buffer) ||
+        ffReadFileData(FASTFETCH_TARGET_DIR_USR "/lib/kitty/kitty/constants.py", sizeof(buffer) - 1, buffer)
+        #else
+        ffReadFileData(_PATH_LOCALBASE "/share/kitty/kitty/constants.py", sizeof(buffer) - 1, buffer)
+        #endif
+    )
+    {
+        // Starts from version 0.17.0
+        // https://github.com/kovidgoyal/kitty/blob/master/kitty/constants.py#L25
+        const char* p = memmem(buffer, sizeof(buffer) - 1, "version: Version = Version(", strlen("version: Version = Version("));
+        if (p)
+        {
+            p += strlen("version: Version = Version(");
+            int major, minor, patch;
+            if (sscanf(p, "%d,%d,%d", &major, &minor, &patch) == 3)
+            {
+                ffStrbufSetF(version, "%d.%d.%d", major, minor, patch);
+                return true;
+            }
+        }
+    }
+    #endif
+
+    char versionHex[64];
+    // https://github.com/fastfetch-cli/fastfetch/discussions/1030#discussioncomment-9845233
+    if (ffGetTerminalResponse(
+        "\eP+q6b697474792d71756572792d76657273696f6e\e\\", // kitty-query-version
+        "\eP1+r%*[^=]=%63[^\e]\e\\\\", versionHex) == NULL)
+    {
+        // decode hex string
+        for (const char* p = versionHex; p[0] && p[1]; p += 2)
+        {
+            unsigned value;
+            if (sscanf(p, "%2x", &value) == 1)
+                ffStrbufAppendC(version, (char) value);
+        }
+        return true;
+    }
+
+    //kitty 0.21.2 created by Kovid Goyal
+    return getExeVersionGeneral(exe, version);
+}
+
+FF_MAYBE_UNUSED static bool getTerminalVersionPtyxis(FF_MAYBE_UNUSED FFstrbuf* exe, FFstrbuf* version)
+{
+    if(ffProcessAppendStdOut(version, (char* const[]) {
+        "ptyxis",
+        "--version",
+        NULL
+    }) != NULL)
+        return false;
+
+    ffStrbufSubstrBeforeFirstC(version, '\n');
+    ffStrbufSubstrAfterFirstC(version, ' ');
+    return true;
+}
+#endif
+
 #ifdef _WIN32
 
 static bool getTerminalVersionWindowsTerminal(FFstrbuf* exe, FFstrbuf* version)
@@ -477,6 +578,8 @@ static bool getTerminalVersionConEmu(FFstrbuf* exe, FFstrbuf* version)
 
 bool fftsGetTerminalVersion(FFstrbuf* processName, FF_MAYBE_UNUSED FFstrbuf* exe, FFstrbuf* version)
 {
+    if (!instance.config.general.detectVersion) return false;
+
     #ifdef __ANDROID__
 
     if(ffStrbufEqualS(processName, "com.termux"))
@@ -484,7 +587,7 @@ bool fftsGetTerminalVersion(FFstrbuf* processName, FF_MAYBE_UNUSED FFstrbuf* exe
 
     #endif
 
-    #if defined(__linux__) || defined(__FreeBSD__)
+    #if defined(__linux__) || defined(__FreeBSD__) || defined(__sun)
 
     if(ffStrbufStartsWithIgnCaseS(processName, "gnome-terminal"))
         return getTerminalVersionGnome(version);
@@ -525,12 +628,21 @@ bool fftsGetTerminalVersion(FFstrbuf* processName, FF_MAYBE_UNUSED FFstrbuf* exe
     if(ffStrbufIgnCaseEqualS(processName, "st"))
         return getTerminalVersionSt(exe, version);
 
+    if(ffStrbufIgnCaseEqualS(processName, "lxterminal"))
+        return getTerminalVersionLxterminal(exe, version);
+
+    if(ffStrbufIgnCaseEqualS(processName, "weston-terminal"))
+        return getTerminalVersionWeston(exe, version);
+
     if(ffStrbufIgnCaseEqualS(processName, "urxvt") ||
         ffStrbufIgnCaseEqualS(processName, "urxvtd") ||
         ffStrbufIgnCaseEqualS(processName, "rxvt") ||
         ffStrbufIgnCaseEqualS(processName, "rxvt-unicode")
     )
         return getTerminalVersionUrxvt(exe, version);
+
+    if(ffStrbufIgnCaseEqualS(processName, "ptyxis-agent"))
+        return getTerminalVersionPtyxis(exe, version);
 
     #endif
 
@@ -547,7 +659,7 @@ bool fftsGetTerminalVersion(FFstrbuf* processName, FF_MAYBE_UNUSED FFstrbuf* exe
     #ifndef _WIN32
 
     if(ffStrbufIgnCaseEqualS(processName, "kitty"))
-        return getExeVersionGeneral(exe, version); //kitty 0.21.2 created by Kovid Goyal
+        return getTerminalVersionKitty(exe, version);
 
     if (ffStrbufIgnCaseEqualS(processName, "Tabby") && getExeVersionRaw(exe, version))
         return true;
@@ -565,6 +677,9 @@ bool fftsGetTerminalVersion(FFstrbuf* processName, FF_MAYBE_UNUSED FFstrbuf* exe
 
     if(ffStrbufStartsWithIgnCaseS(processName, "zellij"))
         return getTerminalVersionZellij(exe, version);
+
+    if(ffStrbufStartsWithIgnCaseS(processName, "zed"))
+        return getTerminalVersionZed(exe, version);
 
     const char* termProgramVersion = getenv("TERM_PROGRAM_VERSION");
     if(termProgramVersion)

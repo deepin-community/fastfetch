@@ -6,15 +6,7 @@
 
 void ffPrintCustom(FFCustomOptions* options)
 {
-    if (options->moduleArgs.outputFormat.length == 0)
-    {
-        ffPrintError(FF_CUSTOM_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "output format must be set for custom module");
-        return;
-    }
-
-    ffPrintLogoAndKey(FF_CUSTOM_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT);
-    ffStrbufWriteTo(&options->moduleArgs.outputFormat, stdout);
-    puts(FASTFETCH_TEXT_MODIFIER_RESET);
+    ffPrintFormat(FF_CUSTOM_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, 0, ((FFformatarg[]) {}));
 }
 
 bool ffParseCustomCommandOptions(FFCustomOptions* options, const char* key, const char* value)
@@ -65,7 +57,7 @@ void ffInitCustomOptions(FFCustomOptions* options)
         NULL,
         ffGenerateCustomJsonConfig
     );
-    ffOptionInitModuleArg(&options->moduleArgs);
+    ffOptionInitModuleArg(&options->moduleArgs, "");
     ffStrbufSetStatic(&options->moduleArgs.key, " ");
 }
 

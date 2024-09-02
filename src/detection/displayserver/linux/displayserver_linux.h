@@ -5,7 +5,9 @@
 
 #include "detection/displayserver/displayserver.h"
 
-void ffdsConnectWayland(FFDisplayServerResult* result);
+bool ffdsMatchDrmConnector(const char* connName, FFstrbuf* edidName);
+
+const char* ffdsConnectWayland(FFDisplayServerResult* result);
 
 void ffdsConnectXcbRandr(FFDisplayServerResult* result);
 void ffdsConnectXcb(FFDisplayServerResult* result);
@@ -16,5 +18,7 @@ void ffdsConnectXlib(FFDisplayServerResult* result);
 void ffdsConnectDrm(FFDisplayServerResult* result);
 
 void ffdsDetectWMDE(FFDisplayServerResult* result);
+
+FFDisplayType ffdsGetDisplayType(const char* drmConnectorName);
 
 #endif

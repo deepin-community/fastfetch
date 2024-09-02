@@ -5,11 +5,17 @@
 #include <string.h>
 
 #define FF_DBUS_MPRIS_PREFIX "org.mpris.MediaPlayer2."
-#define FF_DBUS_TIMEOUT_MILLISECONDS 35
 
 #ifdef FF_HAVE_DBUS
 #include "common/dbus.h"
 #include "common/library.h"
+
+#define FF_DBUS_ITER_CONTINUE(dbus, iterator) \
+    { \
+        if(!(dbus)->lib->ffdbus_message_iter_next(iterator)) \
+            break; \
+        continue; \
+    }
 
 static bool getBusProperties(FFDBusData* data, const char* busName, FFMediaResult* result)
 {
@@ -61,13 +67,13 @@ static bool getBusProperties(FFDBusData* data, const char* busName, FFMediaResul
         data->lib->ffdbus_message_iter_next(&dictIterator);
 
         if(ffStrEquals(key, "xesam:title"))
-            ffDBusGetValue(data, &dictIterator, &result->song);
+            ffDBusGetString(data, &dictIterator, &result->song);
         else if(ffStrEquals(key, "xesam:album"))
-            ffDBusGetValue(data, &dictIterator, &result->album);
+            ffDBusGetString(data, &dictIterator, &result->album);
         else if(ffStrEquals(key, "xesam:artist"))
-            ffDBusGetValue(data, &dictIterator, &result->artist);
+            ffDBusGetString(data, &dictIterator, &result->artist);
         else if(ffStrEquals(key, "xesam:url"))
-            ffDBusGetValue(data, &dictIterator, &result->url);
+            ffDBusGetString(data, &dictIterator, &result->url);
 
         if(result->song.length > 0 && result->artist.length > 0 && result->album.length > 0 && result->url.length > 0)
             break;
@@ -84,6 +90,8 @@ static bool getBusProperties(FFDBusData* data, const char* busName, FFMediaResul
         ffStrbufClear(&result->url);
         return false;
     }
+
+    ffDBusGetPropertyString(data, busName, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player", "PlaybackStatus", &result->status);
 
     //Set short bus name
     ffStrbufAppendS(&result->playerId, busName + sizeof(FF_DBUS_MPRIS_PREFIX) - 1);
@@ -119,7 +127,7 @@ static void getBestBus(FFDBusData* data, FFMediaResult* result)
         getBusProperties(data, FF_DBUS_MPRIS_PREFIX"plasma-browser-integration", result)
     ) return;
 
-    DBusMessage* reply = ffDBusGetMethodReply(data, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "ListNames");
+    DBusMessage* reply = ffDBusGetMethodReply(data, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "ListNames", NULL);
     if(reply == NULL)
         return;
 

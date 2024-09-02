@@ -1,5 +1,6 @@
 #include "de.h"
 
+#include "common/dbus.h"
 #include "common/io/io.h"
 #include "common/library.h"
 #include "common/parsing.h"
@@ -12,19 +13,20 @@
 
 static void getKDE(FFstrbuf* result, FFDEOptions* options)
 {
-    ffParsePropFileValues(FASTFETCH_TARGET_DIR_USR "/share/xsessions/plasmax11.desktop", 1, (FFpropquery[]) {
+    ffParsePropFileValues(FASTFETCH_TARGET_DIR_USR "/share/wayland-sessions/plasma.desktop", 1, (FFpropquery[]) {
         {"X-KDE-PluginInfo-Version =", result}
     });
+    if(result->length == 0)
+    {
+        ffParsePropFileValues(FASTFETCH_TARGET_DIR_USR "/share/xsessions/plasmax11.desktop", 1, (FFpropquery[]) {
+            {"X-KDE-PluginInfo-Version =", result}
+        });
+    }
     if(result->length == 0)
         ffParsePropFileData("xsessions/plasma.desktop", "X-KDE-PluginInfo-Version =", result);
     if(result->length == 0)
         ffParsePropFileData("xsessions/plasma5.desktop", "X-KDE-PluginInfo-Version =", result);
-    if(result->length == 0)
-    {
-        ffParsePropFileValues(FASTFETCH_TARGET_DIR_USR "/share/wayland-sessions/plasma.desktop", 1, (FFpropquery[]) {
-            {"X-KDE-PluginInfo-Version =", result}
-        });
-    }
+
     if(result->length == 0)
         ffParsePropFileData("wayland-sessions/plasmawayland.desktop", "X-KDE-PluginInfo-Version =", result);
     if(result->length == 0)
@@ -41,11 +43,25 @@ static void getKDE(FFstrbuf* result, FFDEOptions* options)
     }
 }
 
+static const char* getGnomeByDbus(FF_MAYBE_UNUSED FFstrbuf* result)
+{
+#ifdef FF_HAVE_DBUS
+    FFDBusData dbus;
+    if (ffDBusLoadData(DBUS_BUS_SESSION, &dbus) != NULL)
+        return "ffDBusLoadData() failed";
+
+    ffDBusGetPropertyString(&dbus, "org.gnome.Shell", "/org/gnome/Shell", "org.gnome.Shell", "ShellVersion", result);
+    return NULL;
+#else // FF_HAVE_DBUS
+    return "ffDBusLoadData() failed: dbus support not compiled in";
+#endif // FF_HAVE_DBUS
+}
+
 static void getGnome(FFstrbuf* result, FF_MAYBE_UNUSED FFDEOptions* options)
 {
-    ffParsePropFileData("gnome-shell/org.gnome.Extensions", "version :", result);
+    getGnomeByDbus(result);
 
-    if (result->length == 0)
+    if (result->length == 0 && options->slowVersionDetection)
     {
         if (ffProcessAppendStdOut(result, (char* const[]){
             "gnome-shell",
@@ -58,7 +74,20 @@ static void getGnome(FFstrbuf* result, FF_MAYBE_UNUSED FFDEOptions* options)
 
 static void getCinnamon(FFstrbuf* result, FF_MAYBE_UNUSED FFDEOptions* options)
 {
-    ffParsePropFileData("applications/cinnamon.desktop", "X-GNOME-Bugzilla-Version =", result);
+    ffStrbufSetS(result, getenv("CINNAMON_VERSION"));
+
+    if (result->length == 0)
+        ffParsePropFileData("applications/cinnamon.desktop", "X-GNOME-Bugzilla-Version =", result);
+
+    if (result->length == 0 && options->slowVersionDetection)
+    {
+        if (ffProcessAppendStdOut(result, (char* const[]){
+            "cinnamon",
+            "--version",
+            NULL
+        }) == NULL) // Cinnamon 6.2.2
+            ffStrbufSubstrAfterLastC(result, ' ');
+    }
 }
 
 static void getMate(FFstrbuf* result, FFDEOptions* options)
@@ -90,11 +119,16 @@ static void getMate(FFstrbuf* result, FFDEOptions* options)
 
 static const char* getXfce4ByLib(FFstrbuf* result)
 {
+#ifndef FF_DISABLE_DLOPEN
     const char* xfce_version_string(void); // from `xfce4/libxfce4util/xfce-misutils.h
     FF_LIBRARY_LOAD(xfce4util, NULL, "dlopen libxfce4util" FF_LIBRARY_EXTENSION "failed", "libxfce4util" FF_LIBRARY_EXTENSION, 7);
     FF_LIBRARY_LOAD_SYMBOL_MESSAGE(xfce4util, xfce_version_string);
     ffStrbufSetS(result, ffxfce_version_string());
     return NULL;
+#else
+    FF_UNUSED(result);
+    return "dlopen is disabled";
+#endif
 }
 
 static void getXFCE4(FFstrbuf* result, FFDEOptions* options)
@@ -146,6 +180,8 @@ static void getBudgie(FFstrbuf* result, FF_MAYBE_UNUSED FFDEOptions* options)
 
 const char* ffDetectDEVersion(const FFstrbuf* deName, FFstrbuf* result, FFDEOptions* options)
 {
+    if (!instance.config.general.detectVersion) return "Disabled by config";
+
     if (ffStrbufEqualS(deName, FF_DE_PRETTY_PLASMA))
         getKDE(result, options);
     else if (ffStrbufEqualS(deName, FF_DE_PRETTY_GNOME))

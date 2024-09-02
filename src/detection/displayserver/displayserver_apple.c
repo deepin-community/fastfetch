@@ -1,5 +1,6 @@
 #include "displayserver.h"
 #include "util/apple/cf_helpers.h"
+#include "util/stringUtils.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -7,7 +8,12 @@
 #include <CoreGraphics/CGDirectDisplay.h>
 #include <CoreVideo/CVDisplayLink.h>
 
+#ifdef MAC_OS_X_VERSION_10_15
 extern CFDictionaryRef CoreDisplay_DisplayCreateInfoDictionary(CGDirectDisplayID display) __attribute__((weak_import));
+extern Boolean CoreDisplay_Display_IsHDRModeEnabled(CGDirectDisplayID display) __attribute__((weak_import));
+#else
+#include <IOKit/graphics/IOGraphicsLib.h>
+#endif
 
 static void detectDisplays(FFDisplayServerResult* ds)
 {
@@ -32,24 +38,32 @@ static void detectDisplays(FFDisplayServerResult* ds)
                 {
                     const CVTime time = CVDisplayLinkGetNominalOutputVideoRefreshPeriod(link);
                     if (!(time.flags & kCVTimeIsIndefinite))
-                        refreshRate = time.timeScale / (double) time.timeValue + 0.5; //59.97...
+                        refreshRate = time.timeScale / (double) time.timeValue; //59.97...
                     CVDisplayLinkRelease(link);
                 }
             }
 
             FF_STRBUF_AUTO_DESTROY name = ffStrbufCreate();
+            CFDictionaryRef FF_CFTYPE_AUTO_RELEASE displayInfo = NULL;
+            #ifdef MAC_OS_X_VERSION_10_15
             if(CoreDisplay_DisplayCreateInfoDictionary)
+                displayInfo = CoreDisplay_DisplayCreateInfoDictionary(screen);
+            #else
             {
-                CFDictionaryRef FF_CFTYPE_AUTO_RELEASE displayInfo = CoreDisplay_DisplayCreateInfoDictionary(screen);
-                if(displayInfo)
-                {
-                    CFDictionaryRef productNames;
-                    if(!ffCfDictGetDict(displayInfo, CFSTR(kDisplayProductName), &productNames))
-                        ffCfDictGetString(productNames, CFSTR("en_US"), &name);
-                }
+                io_service_t servicePort = CGDisplayIOServicePort(screen);
+                displayInfo = IODisplayCreateInfoDictionary(servicePort, kIODisplayOnlyPreferredName);
+            }
+            #endif
+            if(displayInfo)
+            {
+                CFDictionaryRef productNames;
+                if(!ffCfDictGetDict(displayInfo, CFSTR(kDisplayProductName), &productNames))
+                    ffCfDictGetString(productNames, CFSTR("en_US"), &name);
             }
 
-            ffdsAppendDisplay(ds,
+            CGSize size = CGDisplayScreenSize(screen);
+
+            FFDisplayResult* display = ffdsAppendDisplay(ds,
                 (uint32_t)CGDisplayModeGetPixelWidth(mode),
                 (uint32_t)CGDisplayModeGetPixelHeight(mode),
                 refreshRate,
@@ -59,8 +73,27 @@ static void detectDisplays(FFDisplayServerResult* ds)
                 &name,
                 CGDisplayIsBuiltin(screen) ? FF_DISPLAY_TYPE_BUILTIN : FF_DISPLAY_TYPE_EXTERNAL,
                 CGDisplayIsMain(screen),
-                (uint64_t)screen
+                (uint64_t)screen,
+                (uint32_t) (size.width + 0.5),
+                (uint32_t) (size.height + 0.5)
             );
+            if (display)
+            {
+                // https://stackoverflow.com/a/33519316/9976392
+                // Also shitty, but better than parsing `CFCopyDescription(mode)`
+                CFDictionaryRef dict = (CFDictionaryRef) *((int64_t *)mode + 2);
+                if (CFGetTypeID(dict) == CFDictionaryGetTypeID())
+                {
+                    int32_t bitDepth;
+                    ffCfDictGetInt(dict, kCGDisplayBitsPerSample, &bitDepth);
+                    display->bitDepth = (uint8_t) bitDepth;
+                }
+
+                if (CoreDisplay_Display_IsHDRModeEnabled)
+                {
+                    display->hdrEnabled = CoreDisplay_Display_IsHDRModeEnabled(screen);
+                }
+            }
             CGDisplayModeRelease(mode);
         }
         CGDisplayRelease(screen);

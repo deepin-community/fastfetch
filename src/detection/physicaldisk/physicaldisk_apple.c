@@ -7,17 +7,22 @@
 #include <IOKit/storage/IOBlockStorageDriver.h>
 #include <IOKit/storage/IOStorageDeviceCharacteristics.h>
 #include <IOKit/storage/IOStorageProtocolCharacteristics.h>
-#include <IOKit/storage/nvme/NVMeSMARTLibExternal.h>
+#ifdef MAC_OS_X_VERSION_10_15
+    #include <IOKit/storage/nvme/NVMeSMARTLibExternal.h>
+#endif
 
+#ifdef MAC_OS_X_VERSION_10_15
 static inline void wrapIoDestroyPlugInInterface(IOCFPlugInInterface*** pluginInf)
 {
     assert(pluginInf);
     if (*pluginInf)
         IODestroyPlugInInterface(*pluginInf);
 }
+#endif
 
 static const char* detectSsdTemp(io_service_t entryPhysical, double* temp)
 {
+    #ifdef MAC_OS_X_VERSION_10_15
     __attribute__((__cleanup__(wrapIoDestroyPlugInInterface))) IOCFPlugInInterface** pluginInf = NULL;
     int32_t score;
     if (IOCreatePlugInInterfaceForService(entryPhysical, kIONVMeSMARTUserClientTypeID, kIOCFPlugInInterfaceID, &pluginInf, &score) != kIOReturnSuccess)
@@ -36,6 +41,9 @@ static const char* detectSsdTemp(io_service_t entryPhysical, double* temp)
 
     (*pluginInf)->Release(smartInf);
     return error;
+    #else
+    return "No support for old MacOS version";
+    #endif
 }
 
 const char* ffDetectPhysicalDisk(FFlist* result, FFPhysicalDiskOptions* options)
@@ -74,10 +82,12 @@ const char* ffDetectPhysicalDisk(FFlist* result, FFPhysicalDiskOptions* options)
         device->temperature = FF_PHYSICALDISK_TEMP_UNSET;
 
         FF_CFTYPE_AUTO_RELEASE CFBooleanRef removable = IORegistryEntryCreateCFProperty(entryPartition, CFSTR(kIOMediaRemovableKey), kCFAllocatorDefault, kNilOptions);
-        device->type |= CFBooleanGetValue(removable) ? FF_PHYSICALDISK_TYPE_REMOVABLE : FF_PHYSICALDISK_TYPE_FIXED;
+        if (removable)
+            device->type |= CFBooleanGetValue(removable) ? FF_PHYSICALDISK_TYPE_REMOVABLE : FF_PHYSICALDISK_TYPE_FIXED;
 
         FF_CFTYPE_AUTO_RELEASE CFBooleanRef writable = IORegistryEntryCreateCFProperty(entryPartition, CFSTR(kIOMediaWritableKey), kCFAllocatorDefault, kNilOptions);
-        device->type |= CFBooleanGetValue(writable) ? FF_PHYSICALDISK_TYPE_READWRITE : FF_PHYSICALDISK_TYPE_READONLY;
+        if (writable)
+            device->type |= CFBooleanGetValue(writable) ? FF_PHYSICALDISK_TYPE_READWRITE : FF_PHYSICALDISK_TYPE_READONLY;
 
         FF_CFTYPE_AUTO_RELEASE CFStringRef bsdName = IORegistryEntryCreateCFProperty(entryPartition, CFSTR(kIOBSDNameKey), kCFAllocatorDefault, kNilOptions);
         if (bsdName)
@@ -117,12 +127,14 @@ const char* ffDetectPhysicalDisk(FFlist* result, FFPhysicalDiskOptions* options)
                 }
             }
 
+            #ifdef MAC_OS_X_VERSION_10_15
             if (options->temp)
             {
                 FF_CFTYPE_AUTO_RELEASE CFBooleanRef nvmeSMARTCapable = IORegistryEntryCreateCFProperty(entryPhysical, CFSTR(kIOPropertyNVMeSMARTCapableKey), kCFAllocatorDefault, kNilOptions);
                 if (nvmeSMARTCapable && CFBooleanGetValue(nvmeSMARTCapable))
                     detectSsdTemp(entryPhysical, &device->temperature);
             }
+            #endif
         }
     }
 

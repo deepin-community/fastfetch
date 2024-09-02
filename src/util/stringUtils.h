@@ -64,3 +64,18 @@ static inline bool ffStrContainsIgnCase(const char* str, const char* compareTo)
 {
     return strcasestr(str, compareTo) != NULL;
 }
+
+static inline bool ffStrContainsC(const char* str, char compareTo)
+{
+    return strchr(str, compareTo) != NULL;
+}
+
+static inline bool ffCharIsEnglishAlphabet(char c)
+{
+    return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z');
+}
+
+static inline bool ffCharIsDigit(char c)
+{
+    return '0' <= c && c <= '9';
+}

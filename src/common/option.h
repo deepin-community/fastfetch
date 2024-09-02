@@ -45,11 +45,21 @@ static inline void ffOptionInitModuleBaseInfo(
     baseInfo->generateJsonConfig = (__typeof__(baseInfo->generateJsonConfig)) generateJsonConfig;
 }
 
+typedef enum FFModuleKeyType
+{
+    FF_MODULE_KEY_TYPE_NONE = 0,
+    FF_MODULE_KEY_TYPE_STRING = 1 << 0,
+    FF_MODULE_KEY_TYPE_ICON = 1 << 1,
+    FF_MODULE_KEY_TYPE_BOTH = FF_MODULE_KEY_TYPE_STRING | FF_MODULE_KEY_TYPE_ICON,
+} FFModuleKeyType;
+
 typedef struct FFModuleArgs
 {
     FFstrbuf key;
     FFstrbuf keyColor;
+    FFstrbuf keyIcon;
     FFstrbuf outputFormat;
+    FFstrbuf outputColor;
     uint32_t keyWidth;
 } FFModuleArgs;
 
@@ -66,6 +76,28 @@ FF_C_NODISCARD uint32_t ffOptionParseUInt32(const char* argumentKey, const char*
 FF_C_NODISCARD int32_t ffOptionParseInt32(const char* argumentKey, const char* value);
 FF_C_NODISCARD int ffOptionParseEnum(const char* argumentKey, const char* requestedKey, FFKeyValuePair pairs[]);
 FF_C_NODISCARD bool ffOptionParseBoolean(const char* str);
-void ffOptionParseColor(const char* value, FFstrbuf* buffer);
-void ffOptionInitModuleArg(FFModuleArgs* args);
-void ffOptionDestroyModuleArg(FFModuleArgs* args);
+void ffOptionParseColorNoClear(const char* value, FFstrbuf* buffer);
+static inline void ffOptionParseColor(const char* value, FFstrbuf* buffer)
+{
+    ffStrbufClear(buffer);
+    ffOptionParseColorNoClear(value, buffer);
+}
+
+static inline void ffOptionInitModuleArg(FFModuleArgs* args, const char* icon)
+{
+    ffStrbufInit(&args->key);
+    ffStrbufInit(&args->keyColor);
+    ffStrbufInitStatic(&args->keyIcon, icon);
+    ffStrbufInit(&args->outputFormat);
+    ffStrbufInit(&args->outputColor);
+    args->keyWidth = 0;
+}
+
+static inline void ffOptionDestroyModuleArg(FFModuleArgs* args)
+{
+    ffStrbufDestroy(&args->key);
+    ffStrbufDestroy(&args->keyColor);
+    ffStrbufDestroy(&args->keyIcon);
+    ffStrbufDestroy(&args->outputFormat);
+    ffStrbufDestroy(&args->outputColor);
+}

@@ -7,7 +7,7 @@
 #include "modules/battery/battery.h"
 #include "util/stringUtils.h"
 
-#define FF_BATTERY_NUM_FORMAT_ARGS 9
+#define FF_BATTERY_NUM_FORMAT_ARGS 10
 
 static void printBattery(FFBatteryOptions* options, FFBatteryResult* result, uint8_t index)
 {
@@ -25,7 +25,7 @@ static void printBattery(FFBatteryOptions* options, FFBatteryResult* result, uin
         {
             if(instance.config.display.percentType & FF_PERCENTAGE_TYPE_BAR_BIT)
             {
-                ffPercentAppendBar(&str, result->capacity, options->percent);
+                ffPercentAppendBar(&str, result->capacity, options->percent, &options->moduleArgs);
             }
 
             if(instance.config.display.percentType & FF_PERCENTAGE_TYPE_NUM_BIT)
@@ -33,7 +33,7 @@ static void printBattery(FFBatteryOptions* options, FFBatteryResult* result, uin
                 if(str.length > 0)
                     ffStrbufAppendC(&str, ' ');
 
-                ffPercentAppendNum(&str, result->capacity, options->percent, str.length > 0);
+                ffPercentAppendNum(&str, result->capacity, options->percent, str.length > 0, &options->moduleArgs);
             }
         }
 
@@ -50,27 +50,30 @@ static void printBattery(FFBatteryOptions* options, FFBatteryResult* result, uin
             if(str.length > 0)
                 ffStrbufAppendS(&str, " - ");
 
-            ffTempsAppendNum(result->temperature, &str, options->tempConfig);
+            ffTempsAppendNum(result->temperature, &str, options->tempConfig, &options->moduleArgs);
         }
 
         ffStrbufPutTo(&str, stdout);
     }
     else
     {
-        FF_STRBUF_AUTO_DESTROY capacityStr = ffStrbufCreate();
-        ffPercentAppendNum(&capacityStr, result->capacity, options->percent, false);
+        FF_STRBUF_AUTO_DESTROY capacityNum = ffStrbufCreate();
+        ffPercentAppendNum(&capacityNum, result->capacity, options->percent, false, &options->moduleArgs);
+        FF_STRBUF_AUTO_DESTROY capacityBar = ffStrbufCreate();
+        ffPercentAppendBar(&capacityBar, result->capacity, options->percent, &options->moduleArgs);
         FF_STRBUF_AUTO_DESTROY tempStr = ffStrbufCreate();
-        ffTempsAppendNum(result->temperature, &tempStr, options->tempConfig);
+        ffTempsAppendNum(result->temperature, &tempStr, options->tempConfig, &options->moduleArgs);
         FF_PRINT_FORMAT_CHECKED(FF_BATTERY_MODULE_NAME, index, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_BATTERY_NUM_FORMAT_ARGS, ((FFformatarg[]) {
-            {FF_FORMAT_ARG_TYPE_STRBUF, &result->manufacturer},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &result->modelName},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &result->technology},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &capacityStr},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &result->status},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &tempStr},
-            {FF_FORMAT_ARG_TYPE_UINT, &result->cycleCount},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &result->serial},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &result->manufactureDate},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &result->manufacturer, "manufacturer"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &result->modelName, "model-name"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &result->technology, "technology"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &capacityNum, "capacity"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &result->status, "status"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &tempStr, "temperature"},
+            {FF_FORMAT_ARG_TYPE_UINT, &result->cycleCount, "cycle-count"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &result->serial, "serial"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &result->manufactureDate, "manufacture-date"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &capacityBar, "capacity-bar"},
         }));
     }
 }
@@ -84,23 +87,28 @@ void ffPrintBattery(FFBatteryOptions* options)
     if (error)
     {
         ffPrintError(FF_BATTERY_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "%s", error);
+        return;
     }
-    else
+    if(results.length == 0)
     {
-        for(uint8_t i = 0; i < (uint8_t) results.length; i++)
-        {
-            FFBatteryResult* result = ffListGet(&results, i);
-            printBattery(options, result, i);
+        ffPrintError(FF_BATTERY_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "%s", "No batteries found");
+        return;
+    }
 
-            ffStrbufDestroy(&result->manufacturer);
-            ffStrbufDestroy(&result->modelName);
-            ffStrbufDestroy(&result->technology);
-            ffStrbufDestroy(&result->status);
-            ffStrbufDestroy(&result->serial);
-            ffStrbufDestroy(&result->manufactureDate);
-        }
-        if(results.length == 0)
-            ffPrintError(FF_BATTERY_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "No batteries found");
+    for(uint32_t i = 0; i < results.length; i++)
+    {
+        FFBatteryResult* result = FF_LIST_GET(FFBatteryResult, results, i);
+        printBattery(options, result, results.length == 1 ? 0 : (uint8_t) (i + 1));
+    }
+
+    FF_LIST_FOR_EACH(FFBatteryResult, result, results)
+    {
+        ffStrbufDestroy(&result->manufacturer);
+        ffStrbufDestroy(&result->modelName);
+        ffStrbufDestroy(&result->technology);
+        ffStrbufDestroy(&result->status);
+        ffStrbufDestroy(&result->serial);
+        ffStrbufDestroy(&result->manufactureDate);
     }
 }
 
@@ -217,15 +225,16 @@ void ffGenerateBatteryJsonResult(FFBatteryOptions* options, yyjson_mut_doc* doc,
 void ffPrintBatteryHelpFormat(void)
 {
     FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_BATTERY_MODULE_NAME, "{4}, {5}", FF_BATTERY_NUM_FORMAT_ARGS, ((const char* []) {
-        "Battery manufactor",
-        "Battery model",
-        "Battery technology",
-        "Battery capacity (percentage)",
-        "Battery status",
-        "Battery temperature (formatted)",
-        "Battery cycle count",
-        "Battery serial number",
-        "Battery manufactor date",
+        "Battery manufacturer - manufacturer",
+        "Battery model name - model-name",
+        "Battery technology - technology",
+        "Battery capacity (percentage num) - capacity",
+        "Battery status - status",
+        "Battery temperature (formatted) - temperature",
+        "Battery cycle count - cycle-count",
+        "Battery serial number - serial",
+        "Battery manufactor date - manufacture-date",
+        "Battery capacity (percentage bar) - capacity-bar",
     }));
 }
 
@@ -242,7 +251,7 @@ void ffInitBatteryOptions(FFBatteryOptions* options)
         ffPrintBatteryHelpFormat,
         ffGenerateBatteryJsonConfig
     );
-    ffOptionInitModuleArg(&options->moduleArgs);
+    ffOptionInitModuleArg(&options->moduleArgs, "");
     options->temp = false;
     options->tempConfig = (FFColorRangeConfig) { 60, 80 };
     options->percent = (FFColorRangeConfig) { 50, 20 };

@@ -1,4 +1,5 @@
 #include "commandoption.h"
+#include "common/color.h"
 #include "common/printing.h"
 #include "common/time.h"
 #include "common/jsonconfig.h"
@@ -11,7 +12,7 @@
 
 bool ffParseModuleOptions(const char* key, const char* value)
 {
-    if (!ffStrStartsWith(key, "--") || !isalpha(key[2])) return false;
+    if (!ffStrStartsWith(key, "--") || !ffCharIsEnglishAlphabet(key[2])) return false;
 
     for (FFModuleBaseInfo** modules = ffModuleInfos[toupper(key[2]) - 'A']; *modules; ++modules)
     {
@@ -79,30 +80,11 @@ static void genJsonResult(FFModuleBaseInfo* baseInfo, yyjson_mut_doc* doc)
 
 static void parseStructureCommand(
     const char* line,
-    FFlist* customValues,
     void (*fn)(FFModuleBaseInfo *baseInfo, yyjson_mut_doc* jsonDoc),
     yyjson_mut_doc* jsonDoc
 )
 {
-    // handle `--set` and `--set-keyless`
-    FF_LIST_FOR_EACH(FFCustomValue, customValue, *customValues)
-    {
-        if (ffStrbufEqualS(&customValue->key, line))
-        {
-            __attribute__((__cleanup__(ffDestroyCustomOptions))) FFCustomOptions options;
-            ffInitCustomOptions(&options);
-            if (customValue->printKey)
-                ffStrbufAppend(&options.moduleArgs.key, &customValue->key);
-            ffStrbufAppend(&options.moduleArgs.outputFormat, &customValue->value);
-            if (__builtin_expect(jsonDoc != NULL, false))
-                fn((FFModuleBaseInfo*) &options, jsonDoc);
-            else
-                ffPrintCustom(&options);
-            return;
-        }
-    }
-
-    if(isalpha(line[0]))
+    if(ffCharIsEnglishAlphabet(line[0]))
     {
         for (FFModuleBaseInfo** modules = ffModuleInfos[toupper(line[0]) - 'A']; *modules; ++modules)
         {
@@ -124,35 +106,35 @@ static void parseStructureCommand(
 void ffPrintCommandOption(FFdata* data, yyjson_mut_doc* jsonDoc)
 {
     //Parse the structure and call the modules
+    int32_t thres = instance.config.display.stat;
     uint32_t startIndex = 0;
     while (startIndex < data->structure.length)
     {
         uint32_t colonIndex = ffStrbufNextIndexC(&data->structure, startIndex, ':');
         data->structure.chars[colonIndex] = '\0';
 
-        uint64_t ms = 0;
-        if(instance.config.display.stat)
+        double ms = 0;
+        if(thres >= 0)
             ms = ffTimeGetTick();
 
-        parseStructureCommand(data->structure.chars + startIndex, &data->customValues, genJsonResult, jsonDoc);
+        parseStructureCommand(data->structure.chars + startIndex, genJsonResult, jsonDoc);
 
-        if(instance.config.display.stat)
+        if(thres >= 0)
         {
             ms = ffTimeGetTick() - ms;
 
             if (jsonDoc)
             {
                 yyjson_mut_val* moduleJson = yyjson_mut_arr_get_last(jsonDoc->root);
-                yyjson_mut_obj_add_uint(jsonDoc, moduleJson, "stat", ms);
+                yyjson_mut_obj_add_real(jsonDoc, moduleJson, "stat", ms);
             }
             else
             {
-                char str[32];
-                int len = snprintf(str, sizeof str, "%" PRIu64 "ms", ms);
-                if(instance.config.display.pipe)
-                    puts(str);
-                else
-                    printf("\033[s\033[1A\033[9999999C\033[%dD%s\033[u", len, str); // Save; Up 1; Right 9999999; Left <len>; Print <str>; Load
+                char str[64];
+                int len = snprintf(str, sizeof str, "%.3fms", ms);
+                if (thres > 0)
+                    snprintf(str, sizeof str, "\e[%sm%.3fms\e[m", (ms <= thres ? FF_COLOR_FG_GREEN : ms <= 2 * thres ? FF_COLOR_FG_YELLOW : FF_COLOR_FG_RED), ms);
+                printf("\e[s\e[1A\e[9999999C\e[%dD%s\e[u", len, str); // Save; Up 1; Right 9999999; Left <len>; Print <str>; Load
             }
         }
 
@@ -177,7 +159,7 @@ void ffMigrateCommandOptionToJsonc(FFdata* data, yyjson_mut_doc* jsonDoc)
         uint32_t colonIndex = ffStrbufNextIndexC(&data->structure, startIndex, ':');
         data->structure.chars[colonIndex] = '\0';
 
-        parseStructureCommand(data->structure.chars + startIndex, &data->customValues, genJsonConfig, jsonDoc);
+        parseStructureCommand(data->structure.chars + startIndex, genJsonConfig, jsonDoc);
 
         startIndex = colonIndex + 1;
     }

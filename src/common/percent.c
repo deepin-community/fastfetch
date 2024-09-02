@@ -6,7 +6,15 @@
 #include "util/textModifier.h"
 #include "util/stringUtils.h"
 
-void ffPercentAppendBar(FFstrbuf* buffer, double percent, FFColorRangeConfig config)
+static void appendOutputColor(FFstrbuf* buffer, const FFModuleArgs* module)
+{
+    if (module->outputColor.length)
+        ffStrbufAppendF(buffer, "\e[%sm", module->outputColor.chars);
+    else if (instance.config.display.colorOutput.length)
+        ffStrbufAppendF(buffer, "\e[%sm", instance.config.display.colorOutput.chars);
+}
+
+void ffPercentAppendBar(FFstrbuf* buffer, double percent, FFColorRangeConfig config, const FFModuleArgs* module)
 {
     uint8_t green = config.green, yellow = config.yellow;
     assert(green <= 100 && yellow <= 100);
@@ -16,12 +24,11 @@ void ffPercentAppendBar(FFstrbuf* buffer, double percent, FFColorRangeConfig con
     uint32_t blocksPercent = (uint32_t) (percent / 100.0 * options->barWidth + 0.5);
     assert(blocksPercent <= options->barWidth);
 
-    if(options->barBorder)
+    if(options->barBorderLeft.length)
     {
         if(!options->pipe)
-            ffStrbufAppendS(buffer, "\e[" FF_COLOR_FG_LIGHT_WHITE "m[ ");
-        else
-            ffStrbufAppendS(buffer, "[ ");
+            ffStrbufAppendS(buffer, "\e[" FF_COLOR_FG_LIGHT_WHITE "m");
+        ffStrbufAppend(buffer, &options->barBorderLeft);
     }
 
     if (percent != percent)
@@ -42,14 +49,34 @@ void ffPercentAppendBar(FFstrbuf* buffer, double percent, FFColorRangeConfig con
         {
             if(!options->pipe)
             {
-                uint32_t section1Begin = (uint32_t) ((green <= yellow ? green : yellow) / 100.0 * options->barWidth + 0.5);
-                uint32_t section2Begin = (uint32_t) ((green > yellow ? green : yellow) / 100.0 * options->barWidth + 0.5);
-                if (i == section2Begin)
-                    ffStrbufAppendF(buffer, "\e[%sm", (green > yellow ? colorGreen : colorRed));
-                else if (i == section1Begin)
-                    ffStrbufAppendF(buffer, "\e[%sm", colorYellow);
-                else if (i == 0)
-                    ffStrbufAppendF(buffer, "\e[%sm", (green <= yellow ? colorGreen : colorRed));
+                if (options->percentType & FF_PERCENTAGE_TYPE_BAR_MONOCHROME_BIT)
+                {
+                    const char* color = NULL;
+                    if (green <= yellow)
+                    {
+                        if (percent < green) color = colorGreen;
+                        else if (percent < yellow) color = colorYellow;
+                        else color = colorRed;
+                    }
+                    else
+                    {
+                        if (percent < yellow) color = colorRed;
+                        else if (percent < green) color = colorYellow;
+                        else color = colorGreen;
+                    }
+                    ffStrbufAppendF(buffer, "\e[%sm", color);
+                }
+                else
+                {
+                    uint32_t section1Begin = (uint32_t) ((green <= yellow ? green : yellow) / 100.0 * options->barWidth + 0.5);
+                    uint32_t section2Begin = (uint32_t) ((green > yellow ? green : yellow) / 100.0 * options->barWidth + 0.5);
+                    if (i == section2Begin)
+                        ffStrbufAppendF(buffer, "\e[%sm", (green > yellow ? colorGreen : colorRed));
+                    else if (i == section1Begin)
+                        ffStrbufAppendF(buffer, "\e[%sm", colorYellow);
+                    else if (i == 0)
+                        ffStrbufAppendF(buffer, "\e[%sm", (green <= yellow ? colorGreen : colorRed));
+                }
             }
             ffStrbufAppend(buffer, &options->barCharElapsed);
         }
@@ -63,19 +90,21 @@ void ffPercentAppendBar(FFstrbuf* buffer, double percent, FFColorRangeConfig con
         }
     }
 
-    if(options->barBorder)
+    if(options->barBorderRight.length)
     {
         if(!options->pipe)
-            ffStrbufAppendS(buffer, "\e[" FF_COLOR_FG_LIGHT_WHITE "m ]");
-        else
-            ffStrbufAppendS(buffer, " ]");
+            ffStrbufAppendS(buffer, "\e[" FF_COLOR_FG_LIGHT_WHITE "m");
+        ffStrbufAppend(buffer, &options->barBorderRight);
     }
 
     if(!options->pipe)
+    {
         ffStrbufAppendS(buffer, FASTFETCH_TEXT_MODIFIER_RESET);
+        appendOutputColor(buffer, module);
+    }
 }
 
-void ffPercentAppendNum(FFstrbuf* buffer, double percent, FFColorRangeConfig config, bool parentheses)
+void ffPercentAppendNum(FFstrbuf* buffer, double percent, FFColorRangeConfig config, bool parentheses, const FFModuleArgs* module)
 {
     uint8_t green = config.green, yellow = config.yellow;
     assert(green <= 100 && yellow <= 100);
@@ -120,6 +149,7 @@ void ffPercentAppendNum(FFstrbuf* buffer, double percent, FFColorRangeConfig con
     if (colored && !options->pipe)
     {
         ffStrbufAppendS(buffer, FASTFETCH_TEXT_MODIFIER_RESET);
+        appendOutputColor(buffer, module);
     }
 
     if (parentheses)
