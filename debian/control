@@ -34,6 +34,6 @@ Section: utils
 Architecture: any
 Multi-Arch: foreign
 Depends: ${shlibs:Depends}, ${misc:Depends}
-Description: This is a neofetch-like tool for fetching system information and displaying them in a pretty way.
+Description: neofetch-like tool for fetching system information
  It is written mainly in C, with performance and customizability in mind.
  Currently, Linux, Android, FreeBSD, MacOS and Windows 7+ are supported.

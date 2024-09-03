@@ -5,9 +5,10 @@ fastfetch (2.23.0-0deepin) unstable; urgency=medium
   * Print model name in Battery keys if available (Battery)
   * Add module `Zpool`
   * Improve performance (Shell / Terminal, Linux)
-  * Support syntax of padded strings in `--<module>-format`. `{variable<padlength}` and `{variable>padlength}` are supported.
+  * Support syntax of padded strings in `--<module>-format`.
+    `{variable<padlength}` and `{variable>padlength}` are supported.
 
- -- Amaro Martínez <xoas@airmail.cc>  Mon, 02 Sep 2024 23:44:25 -0500
+ -- Amaro Martínez <xoas@airmail.cc>  Tue, 03 Sep 2024 00:08:26 -0500
 
 fastfetch (2.22.0) UNRELEASED; urgency=medium
 
