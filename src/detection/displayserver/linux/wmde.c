@@ -1,10 +1,10 @@
 #include "displayserver_linux.h"
+#include "common/io/io.h"
 #include "common/properties.h"
 #include "util/stringUtils.h"
 #include "util/mallocHelper.h"
 
 #include <stdlib.h>
-#include <ctype.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -12,8 +12,8 @@
     #include <sys/sysctl.h>
     #include <sys/types.h>
     #include <sys/user.h>
-#else
-    #include "common/io/io.h"
+#elif defined(__sun)
+    #include <procfs.h>
 #endif
 
 static const char* parseEnv(void)
@@ -44,13 +44,16 @@ static const char* parseEnv(void)
         return "KDE";
 
     if(getenv("GNOME_DESKTOP_SESSION_ID") != NULL)
-        return "Gnome";
+        return "GNOME";
 
     if(getenv("MATE_DESKTOP_SESSION_ID") != NULL)
         return "Mate";
 
     if(getenv("TDE_FULL_SESSION") != NULL)
         return "Trinity";
+
+    if(getenv("HYPRLAND_CMD") != NULL)
+        return "Hyprland";
 
     #ifdef __linux__
     if(
@@ -68,11 +71,10 @@ static void applyPrettyNameIfWM(FFDisplayServerResult* result, const char* name)
         return;
 
     if(
-        ffStrEqualsIgnCase(name, "kwin_wayland") ||
-        ffStrEqualsIgnCase(name, "kwin_wayland_wrapper") ||
-        ffStrEqualsIgnCase(name, "kwin_x11") ||
-        ffStrEqualsIgnCase(name, "kwin_x11_wrapper") ||
-        ffStrEqualsIgnCase(name, "kwin")
+        ffStrEqualsIgnCase(name, "kwin") ||
+        ffStrStartsWithIgnCase(name, "kwin_") ||
+        ffStrEndsWithIgnCase(name, "-kwin_wayland") ||
+        ffStrEndsWithIgnCase(name, "-kwin_x11")
     ) ffStrbufSetS(&result->wmPrettyName, FF_WM_PRETTY_KWIN);
     else if(
         ffStrEqualsIgnCase(name, "gnome-shell") ||
@@ -81,7 +83,8 @@ static void applyPrettyNameIfWM(FFDisplayServerResult* result, const char* name)
         ffStrEqualsIgnCase(name, "Mutter")
     ) ffStrbufSetS(&result->wmPrettyName, FF_WM_PRETTY_MUTTER);
     else if(
-        ffStrEqualsIgnCase(name, "cinnamon-session") ||
+        ffStrEqualsIgnCase(name, "cinnamon") ||
+        ffStrStartsWithIgnCase(name, "cinnamon-") ||
         ffStrEqualsIgnCase(name, "Muffin") ||
         ffStrEqualsIgnCase(name, "Mutter (Muffin)")
     ) ffStrbufSetS(&result->wmPrettyName, FF_WM_PRETTY_MUFFIN);
@@ -116,6 +119,8 @@ static void applyPrettyNameIfWM(FFDisplayServerResult* result, const char* name)
         ffStrbufSetS(&result->wmPrettyName, FF_WM_PRETTY_ICEWM);
     else if(ffStrEqualsIgnCase(name, "dtwm"))
         ffStrbufSetS(&result->wmPrettyName, FF_WM_PRETTY_DTWM);
+    else if(ffStrEqualsIgnCase(name, "hyprland"))
+        ffStrbufSetS(&result->wmPrettyName, FF_WM_PRETTY_HYPRLAND);
 }
 
 static void applyNameIfWM(FFDisplayServerResult* result, const char* processName)
@@ -157,7 +162,7 @@ static void applyPrettyNameIfDE(FFDisplayServerResult* result, const char* name)
     }
 
     else if(
-        ffStrEqualsIgnCase(name, "Gnome") ||
+        ffStrEqualsIgnCase(name, "GNOME") ||
         ffStrEqualsIgnCase(name, "ubuntu:GNOME") ||
         ffStrEqualsIgnCase(name, "ubuntu") ||
         ffStrEqualsIgnCase(name, "gnome-shell")
@@ -200,7 +205,7 @@ static void applyPrettyNameIfDE(FFDisplayServerResult* result, const char* name)
 
     else if(
         ffStrEqualsIgnCase(name, "LXQt") ||
-        ffStrEqualsIgnCase(name, "X-LXQT") ||
+        ffStrEqualsIgnCase(name, "X-LXQt") ||
         ffStrEqualsIgnCase(name, "lxqt-session")
     ) {
         ffStrbufSetS(&result->deProcessName, "lxqt-session");
@@ -226,40 +231,22 @@ static void applyPrettyNameIfDE(FFDisplayServerResult* result, const char* name)
         ffStrbufSetS(&result->deProcessName, "dtsession");
         ffStrbufSetS(&result->dePrettyName, FF_DE_PRETTY_CDE);
     }
-}
 
-static void getWMProtocolNameFromEnv(FFDisplayServerResult* result)
-{
-    //This is only called if all connection attempts to a display server failed
-    //We don't need to check for wayland here, as the wayland code will always set the protocol name to wayland
-
-    const char* env = getenv("XDG_SESSION_TYPE");
-    if(ffStrSet(env))
-    {
-        if(ffStrEqualsIgnCase(env, "x11"))
-            ffStrbufSetS(&result->wmProtocolName, FF_WM_PROTOCOL_X11);
-        else if(ffStrEqualsIgnCase(env, "tty"))
-            ffStrbufSetS(&result->wmProtocolName, FF_WM_PROTOCOL_TTY);
-        else
-            ffStrbufSetS(&result->wmProtocolName, env);
-
-        return;
+    else if(
+        ffStrEqualsIgnCase(name, "ukui-session")
+    ) {
+        ffStrbufSetS(&result->deProcessName, "ukui-session");
+        ffStrbufSetS(&result->dePrettyName, FF_DE_PRETTY_UKUI);
     }
 
-    env = getenv("DISPLAY");
-    if(ffStrSet(env))
-    {
-        ffStrbufSetS(&result->wmProtocolName, FF_WM_PROTOCOL_X11);
-        return;
-    }
-
-    env = getenv("TERM");
-    if(ffStrSet(env) && ffStrEqualsIgnCase(env, "linux"))
-    {
-        ffStrbufSetS(&result->wmProtocolName, FF_WM_PROTOCOL_TTY);
-        return;
+    else if(
+        ffStrStartsWithIgnCase(name, "Unity:Unity")
+    ) {
+        ffStrbufSetS(&result->deProcessName, "unity-session");
+        ffStrbufSetS(&result->dePrettyName, FF_DE_PRETTY_UNITY);
     }
 }
+
 
 static const char* getFromProcesses(FFDisplayServerResult* result)
 {
@@ -289,6 +276,42 @@ static const char* getFromProcesses(FFDisplayServerResult* result)
         if(result->dePrettyName.length > 0 && result->wmPrettyName.length > 0)
             break;
     }
+#elif defined(__sun)
+    FF_AUTO_CLOSE_DIR DIR* procdir = opendir("/proc");
+    if(procdir == NULL)
+        return "opendir(\"/proc\") failed";
+
+    FF_STRBUF_AUTO_DESTROY procPath = ffStrbufCreateA(64);
+    ffStrbufAppendS(&procPath, "/proc/");
+
+    uint32_t procPathLength = procPath.length;
+
+    struct dirent* dirent;
+    while((dirent = readdir(procdir)) != NULL)
+    {
+        if (!ffCharIsDigit(dirent->d_name[0]))
+            continue;
+
+        ffStrbufAppendS(&procPath, dirent->d_name);
+        ffStrbufAppendS(&procPath, "/psinfo");
+        psinfo_t proc;
+        if (ffReadFileData(procPath.chars, sizeof(proc), &proc) == sizeof(proc))
+        {
+            ffStrbufSubstrBefore(&procPath, procPathLength);
+
+            if (proc.pr_uid != userId)
+                continue;
+
+            if(result->dePrettyName.length == 0)
+                applyPrettyNameIfDE(result, proc.pr_fname);
+
+            if(result->wmPrettyName.length == 0)
+                applyNameIfWM(result, proc.pr_fname);
+
+            if(result->dePrettyName.length > 0 && result->wmPrettyName.length > 0)
+                break;
+        }
+    }
 #else
     FF_AUTO_CLOSE_DIR DIR* procdir = opendir("/proc");
     if(procdir == NULL)
@@ -306,7 +329,7 @@ static const char* getFromProcesses(FFDisplayServerResult* result)
     while((dirent = readdir(procdir)) != NULL)
     {
         //Match only folders starting with a number (the pid folders)
-        if(dirent->d_type != DT_DIR || !isdigit(dirent->d_name[0]))
+        if(dirent->d_type != DT_DIR || !ffCharIsDigit(dirent->d_name[0]))
             continue;
 
         ffStrbufAppendS(&procPath, dirent->d_name);
@@ -348,15 +371,6 @@ static const char* getFromProcesses(FFDisplayServerResult* result)
 
 void ffdsDetectWMDE(FFDisplayServerResult* result)
 {
-    //If all connections failed, use the environment variables to detect protocol name
-    if(result->wmProtocolName.length == 0)
-        getWMProtocolNameFromEnv(result);
-
-    //We don't want to detect anything in TTY
-    //This can't happen if a connection succeeded, so we don't need to clear wmProcessName
-    if(ffStrbufIgnCaseCompS(&result->wmProtocolName, FF_WM_PROTOCOL_TTY) == 0)
-        return;
-
     const char* env = parseEnv();
 
     if(result->wmProcessName.length > 0)

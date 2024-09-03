@@ -1,7 +1,7 @@
 #include "gpu_driver_specific.h"
 
-#include "3rdparty/nvml/nvml.h"
 #include "common/library.h"
+#include "nvml.h"
 
 struct FFNvmlData {
     FF_LIBRARY_SYMBOL(nvmlDeviceGetCount_v2)
@@ -11,14 +11,18 @@ struct FFNvmlData {
     FF_LIBRARY_SYMBOL(nvmlDeviceGetTemperature)
     FF_LIBRARY_SYMBOL(nvmlDeviceGetMemoryInfo_v2)
     FF_LIBRARY_SYMBOL(nvmlDeviceGetNumGpuCores)
-    FF_LIBRARY_SYMBOL(nvmlDeviceGetClockInfo)
+    FF_LIBRARY_SYMBOL(nvmlDeviceGetMaxClockInfo)
+    FF_LIBRARY_SYMBOL(nvmlDeviceGetUtilizationRates)
     FF_LIBRARY_SYMBOL(nvmlDeviceGetBrand)
+    FF_LIBRARY_SYMBOL(nvmlDeviceGetName)
 
     bool inited;
 } nvmlData;
 
 const char* ffDetectNvidiaGpuInfo(const FFGpuDriverCondition* cond, FFGpuDriverResult result, const char* soName)
 {
+#ifndef FF_DISABLE_DLOPEN
+
     if (!nvmlData.inited)
     {
         nvmlData.inited = true;
@@ -32,8 +36,10 @@ const char* ffDetectNvidiaGpuInfo(const FFGpuDriverCondition* cond, FFGpuDriverR
         FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(libnvml, nvmlData, nvmlDeviceGetTemperature)
         FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(libnvml, nvmlData, nvmlDeviceGetMemoryInfo_v2)
         FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(libnvml, nvmlData, nvmlDeviceGetNumGpuCores)
-        FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(libnvml, nvmlData, nvmlDeviceGetClockInfo)
+        FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(libnvml, nvmlData, nvmlDeviceGetMaxClockInfo)
+        FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(libnvml, nvmlData, nvmlDeviceGetUtilizationRates)
         FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(libnvml, nvmlData, nvmlDeviceGetBrand)
+        FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(libnvml, nvmlData, nvmlDeviceGetName)
 
         if (ffnvmlInit_v2() != NVML_SUCCESS)
         {
@@ -120,11 +126,28 @@ const char* ffDetectNvidiaGpuInfo(const FFGpuDriverCondition* cond, FFGpuDriverR
         nvmlData.ffnvmlDeviceGetNumGpuCores(device, result.coreCount);
 
     if (result.frequency)
+        nvmlData.ffnvmlDeviceGetMaxClockInfo(device, NVML_CLOCK_GRAPHICS, result.frequency);
+
+    if (result.coreUsage)
     {
-        uint32_t clockMHz;
-        if (nvmlData.ffnvmlDeviceGetClockInfo(device, NVML_CLOCK_GRAPHICS, &clockMHz) == NVML_SUCCESS)
-            *result.frequency = clockMHz / 1000.;
+        nvmlUtilization_t utilization;
+        if (nvmlData.ffnvmlDeviceGetUtilizationRates(device, &utilization) == NVML_SUCCESS)
+            *result.coreUsage = utilization.gpu;
+    }
+
+    if (result.name)
+    {
+        char name[NVML_DEVICE_NAME_V2_BUFFER_SIZE];
+        if (nvmlData.ffnvmlDeviceGetName(device, name, sizeof(name)) == NVML_SUCCESS)
+            ffStrbufSetS(result.name, name);
     }
 
     return NULL;
+
+#else
+
+    FF_UNUSED(cond, result, soName);
+    return "dlopen is disabled";
+
+#endif
 }

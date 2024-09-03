@@ -22,10 +22,11 @@ static void formatKey(const FFDiskIOOptions* options, FFDiskIOResult* dev, uint3
     else
     {
         ffStrbufClear(key);
-        FF_PARSE_FORMAT_STRING_CHECKED(key, &options->moduleArgs.key, 3, ((FFformatarg[]){
-            {FF_FORMAT_ARG_TYPE_UINT, &index},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &dev->name},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &dev->devPath},
+        FF_PARSE_FORMAT_STRING_CHECKED(key, &options->moduleArgs.key, 4, ((FFformatarg[]){
+            {FF_FORMAT_ARG_TYPE_UINT, &index, "index"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &dev->name, "name"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &dev->devPath, "dev-path"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &options->moduleArgs.keyIcon, "icon"},
         }));
     }
 }
@@ -37,7 +38,7 @@ void ffPrintDiskIO(FFDiskIOOptions* options)
 
     if(error)
     {
-        ffPrintError(FF_DISKIO_DISPLAY_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "%s", error);
+        ffPrintError(FF_DISKIO_DISPLAY_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY, "%s", error);
         return;
     }
 
@@ -55,7 +56,7 @@ void ffPrintDiskIO(FFDiskIOOptions* options)
 
         if(options->moduleArgs.outputFormat.length == 0)
         {
-            ffPrintLogoAndKey(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT);
+            ffPrintLogoAndKey(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY);
 
             ffParseSize(dev->bytesRead, &buffer);
             if (!options->detectTotal) ffStrbufAppendS(&buffer, "/s");
@@ -75,14 +76,14 @@ void ffPrintDiskIO(FFDiskIOOptions* options)
             if (!options->detectTotal) ffStrbufAppendS(&buffer, "/s");
 
             FF_PRINT_FORMAT_CHECKED(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY, FF_DISKIO_NUM_FORMAT_ARGS, ((FFformatarg[]){
-                {FF_FORMAT_ARG_TYPE_STRBUF, &buffer},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &buffer2},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &dev->name},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &dev->devPath},
-                {FF_FORMAT_ARG_TYPE_UINT64, &dev->bytesRead},
-                {FF_FORMAT_ARG_TYPE_UINT64, &dev->bytesWritten},
-                {FF_FORMAT_ARG_TYPE_UINT64, &dev->readCount},
-                {FF_FORMAT_ARG_TYPE_UINT64, &dev->writeCount},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &buffer, "size-read"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &buffer2, "size-written"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &dev->name, "name"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &dev->devPath, "dev-path"},
+                {FF_FORMAT_ARG_TYPE_UINT64, &dev->bytesRead, "bytes-read"},
+                {FF_FORMAT_ARG_TYPE_UINT64, &dev->bytesWritten, "bytes-written"},
+                {FF_FORMAT_ARG_TYPE_UINT64, &dev->readCount, "read-count"},
+                {FF_FORMAT_ARG_TYPE_UINT64, &dev->writeCount, "write-count"},
             }));
         }
         ++index;
@@ -193,14 +194,14 @@ void ffGenerateDiskIOJsonResult(FFDiskIOOptions* options, yyjson_mut_doc* doc, y
 void ffPrintDiskIOHelpFormat(void)
 {
     FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_DISKIO_MODULE_NAME, "{1} (R) - {2} (W)", FF_DISKIO_NUM_FORMAT_ARGS, ((const char* []) {
-        "Size of data read [per second] (formatted)",
-        "Size of data written [per second] (formatted)",
-        "Device name",
-        "Device raw file path",
-        "Size of data read [per second] (in bytes)",
-        "Size of data written [per second] (in bytes)",
-        "Number of reads",
-        "Number of writes",
+        "Size of data read [per second] (formatted) - size-read",
+        "Size of data written [per second] (formatted) - size-written",
+        "Device name - name",
+        "Device raw file path - dev-path",
+        "Size of data read [per second] (in bytes) - bytes-read",
+        "Size of data written [per second] (in bytes) - bytes-written",
+        "Number of reads - read-count",
+        "Number of writes - write-count",
     }));
 }
 
@@ -217,7 +218,7 @@ void ffInitDiskIOOptions(FFDiskIOOptions* options)
         ffPrintDiskIOHelpFormat,
         ffGenerateDiskIOJsonConfig
     );
-    ffOptionInitModuleArg(&options->moduleArgs);
+    ffOptionInitModuleArg(&options->moduleArgs, "󰓅");
 
     ffStrbufInit(&options->namePrefix);
     options->detectTotal = false;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "util/FFstrbuf.h"
+
 typedef enum FFformatargtype
 {
     FF_FORMAT_ARG_TYPE_NULL = 0,
@@ -20,6 +22,7 @@ typedef struct FFformatarg
 {
     FFformatargtype type;
     const void* value;
+    const char* name; // argument name, must start with an alphabet
 } FFformatarg;
 
 void ffFormatAppendFormatArg(FFstrbuf* buffer, const FFformatarg* formatarg);

@@ -19,43 +19,35 @@ static void buildOutputDefault(const FFOSResult* os, FFstrbuf* result)
     else if(os->id.length > 0)
         ffStrbufAppend(result, &os->id);
     else
-        ffStrbufAppend(result, &instance.state.platform.systemName);
+        ffStrbufAppend(result, &instance.state.platform.sysinfo.name);
 
     //Append code name if it is missing
-    if(os->codename.length > 0 && !ffStrbufContain(result, &os->versionID))
+    if(os->codename.length > 0 && !ffStrbufContainIgnCase(result, &os->codename))
     {
         ffStrbufAppendC(result, ' ');
         ffStrbufAppend(result, &os->codename);
     }
 
     //Append version if it is missing
-    if(os->versionID.length > 0 && !ffStrbufContain(result, &os->versionID))
+    if(os->versionID.length > 0 && !ffStrbufContainIgnCase(result, &os->versionID))
     {
         ffStrbufAppendC(result, ' ');
         ffStrbufAppend(result, &os->versionID);
     }
-    else if(os->versionID.length == 0 && os->version.length > 0 && !ffStrbufContain(result, &os->version))
+    else if(os->versionID.length == 0 && os->version.length > 0 && !ffStrbufContainIgnCase(result, &os->version))
     {
         ffStrbufAppendC(result, ' ');
         ffStrbufAppend(result, &os->version);
     }
 
-    #ifdef __APPLE__
-    if(os->buildID.length > 0)
-    {
-        ffStrbufAppendC(result, ' ');
-        ffStrbufAppend(result, &os->buildID);
-    }
-    #endif
-
     //Append variant if it is missing
-    if(os->variant.length > 0 && ffStrbufFirstIndex(result, &os->variant) == result->length)
+    if(os->variant.length > 0 && !ffStrbufContainIgnCase(result, &os->variant))
     {
         ffStrbufAppendS(result, " (");
         ffStrbufAppend(result, &os->variant);
         ffStrbufAppendC(result, ')');
     }
-    else if(os->variant.length == 0 && os->variantID.length > 0 && ffStrbufFirstIndex(result, &os->variantID) == result->length)
+    else if(os->variant.length == 0 && os->variantID.length > 0 && !ffStrbufContainIgnCase(result, &os->variantID))
     {
         ffStrbufAppendS(result, " (");
         ffStrbufAppend(result, &os->variantID);
@@ -63,10 +55,10 @@ static void buildOutputDefault(const FFOSResult* os, FFstrbuf* result)
     }
 
     //Append architecture if it is missing
-    if(ffStrbufFirstIndex(result, &instance.state.platform.systemArchitecture) == result->length)
+    if(!ffStrbufContainIgnCase(result, &instance.state.platform.sysinfo.architecture))
     {
         ffStrbufAppendC(result, ' ');
-        ffStrbufAppend(result, &instance.state.platform.systemArchitecture);
+        ffStrbufAppend(result, &instance.state.platform.sysinfo.architecture);
     }
 }
 
@@ -88,10 +80,10 @@ static void buildOutputNixOS(const FFOSResult* os, FFstrbuf* result)
         ffStrbufAppendC(result, ')');
     }
 
-    if(instance.state.platform.systemArchitecture.length > 0)
+    if(instance.state.platform.sysinfo.architecture.length > 0)
     {
         ffStrbufAppendC(result, ' ');
-        ffStrbufAppend(result, &instance.state.platform.systemArchitecture);
+        ffStrbufAppend(result, &instance.state.platform.sysinfo.architecture);
     }
 }
 
@@ -120,18 +112,18 @@ void ffPrintOS(FFOSOptions* options)
     else
     {
         FF_PRINT_FORMAT_CHECKED(FF_OS_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_OS_NUM_FORMAT_ARGS, ((FFformatarg[]){
-            {FF_FORMAT_ARG_TYPE_STRBUF, &instance.state.platform.systemName},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &os->name},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &os->prettyName},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &os->id},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &os->idLike},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &os->variant},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &os->variantID},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &os->version},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &os->versionID},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &os->codename},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &os->buildID},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &instance.state.platform.systemArchitecture}
+            {FF_FORMAT_ARG_TYPE_STRBUF, &instance.state.platform.sysinfo.name, "sysname"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &os->name, "name"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &os->prettyName, "pretty-name"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &os->id, "id"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &os->idLike, "id-like"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &os->variant, "variant"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &os->variantID, "variant-id"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &os->version, "version"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &os->versionID, "version-id"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &os->codename, "codename"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &os->buildID, "build-id"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &instance.state.platform.sysinfo.architecture, "arch"}
         }));
     }
 }
@@ -197,18 +189,18 @@ void ffGenerateOSJsonResult(FF_MAYBE_UNUSED FFOSOptions* options, yyjson_mut_doc
 void ffPrintOSHelpFormat(void)
 {
     FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_OS_MODULE_NAME, "{3} {10} {12}", FF_OS_NUM_FORMAT_ARGS, ((const char* []) {
-        "Name of the kernel (Linux, WIN32_NT, Darwin, FreeBSD)",
-        "Name of the OS",
-        "Pretty name of the OS",
-        "ID of the OS",
-        "ID like of the OS",
-        "Variant of the OS",
-        "Variant ID of the OS",
-        "Version of the OS",
-        "Version ID of the OS",
-        "Version codename of the OS",
-        "Build ID of the OS",
-        "Architecture of the OS"
+        "Name of the kernel (Linux, WIN32_NT, Darwin, FreeBSD) - sysname",
+        "Name of the OS - name",
+        "Pretty name of the OS - pretty-name",
+        "ID of the OS - id",
+        "ID like of the OS - id-like",
+        "Variant of the OS - variant",
+        "Variant ID of the OS - variant-id",
+        "Version of the OS - version",
+        "Version ID of the OS - version-id",
+        "Version codename of the OS - codename",
+        "Build ID of the OS - build-id",
+        "Architecture of the OS - arch",
     }));
 }
 
@@ -225,7 +217,23 @@ void ffInitOSOptions(FFOSOptions* options)
         ffPrintOSHelpFormat,
         ffGenerateOSJsonConfig
     );
-    ffOptionInitModuleArg(&options->moduleArgs);
+    ffOptionInitModuleArg(&options->moduleArgs,
+        #ifdef _WIN32
+            ""
+        #elif __APPLE__
+            ""
+        #elif __FreeBSD__
+            "󰣠"
+        #elif __linux__
+            ""
+        #elif __ANDROID__
+            ""
+        #elif __sun
+            ""
+        #else
+            "?"
+        #endif
+    );
 }
 
 void ffDestroyOSOptions(FFOSOptions* options)

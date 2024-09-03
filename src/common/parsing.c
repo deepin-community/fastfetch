@@ -79,15 +79,15 @@ static void parseSize(FFstrbuf* result, uint64_t bytes, uint32_t base, const cha
 
 void ffParseSize(uint64_t bytes, FFstrbuf* result)
 {
-    switch (instance.config.display.binaryPrefixType)
+    switch (instance.config.display.sizeBinaryPrefix)
     {
-        case FF_BINARY_PREFIX_TYPE_IEC:
+        case FF_SIZE_BINARY_PREFIX_TYPE_IEC:
             parseSize(result, bytes, 1024, (const char*[]) {"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB", NULL});
             break;
-        case FF_BINARY_PREFIX_TYPE_SI:
+        case FF_SIZE_BINARY_PREFIX_TYPE_SI:
             parseSize(result, bytes, 1000, (const char*[]) {"B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB", NULL});
             break;
-        case FF_BINARY_PREFIX_TYPE_JEDEC:
+        case FF_SIZE_BINARY_PREFIX_TYPE_JEDEC:
             parseSize(result, bytes, 1024, (const char*[]) {"B", "KB", "MB", "GB", "TB", NULL});
             break;
         default:
@@ -96,23 +96,37 @@ void ffParseSize(uint64_t bytes, FFstrbuf* result)
     }
 }
 
+bool ffParseFrequency(uint32_t mhz, FFstrbuf* result)
+{
+    if (mhz == 0)
+        return false;
+
+    int8_t ndigits = instance.config.display.freqNdigits;
+
+    if (ndigits >= 0)
+        ffStrbufAppendF(result, "%.*f GHz", ndigits, mhz / 1000.);
+    else
+        ffStrbufAppendF(result, "%u MHz", (unsigned) mhz);
+    return true;
+}
+
 void ffParseGTK(FFstrbuf* buffer, const FFstrbuf* gtk2, const FFstrbuf* gtk3, const FFstrbuf* gtk4)
 {
     if(gtk2->length > 0 && gtk3->length > 0 && gtk4->length > 0)
     {
-        if((ffStrbufIgnCaseComp(gtk2, gtk3) == 0) && (ffStrbufIgnCaseComp(gtk2, gtk4) == 0))
+        if((ffStrbufIgnCaseEqual(gtk2, gtk3)) && (ffStrbufIgnCaseEqual(gtk2, gtk4)))
         {
             ffStrbufAppend(buffer, gtk4);
             ffStrbufAppendS(buffer, " [GTK2/3/4]");
         }
-        else if(ffStrbufIgnCaseComp(gtk2, gtk3) == 0)
+        else if(ffStrbufIgnCaseEqual(gtk2, gtk3))
         {
             ffStrbufAppend(buffer, gtk3);
             ffStrbufAppendS(buffer, " [GTK2/3], ");
             ffStrbufAppend(buffer, gtk4);
             ffStrbufAppendS(buffer, " [GTK4]");
         }
-        else if(ffStrbufIgnCaseComp(gtk3, gtk4) == 0)
+        else if(ffStrbufIgnCaseEqual(gtk3, gtk4))
         {
             ffStrbufAppend(buffer, gtk2);
             ffStrbufAppendS(buffer, " [GTK2], ");
@@ -131,7 +145,7 @@ void ffParseGTK(FFstrbuf* buffer, const FFstrbuf* gtk2, const FFstrbuf* gtk3, co
     }
     else if(gtk2->length > 0 && gtk3->length > 0)
     {
-        if(ffStrbufIgnCaseComp(gtk2, gtk3) == 0)
+        if(ffStrbufIgnCaseEqual(gtk2, gtk3))
         {
             ffStrbufAppend(buffer, gtk3);
             ffStrbufAppendS(buffer, " [GTK2/3]");
@@ -146,7 +160,7 @@ void ffParseGTK(FFstrbuf* buffer, const FFstrbuf* gtk2, const FFstrbuf* gtk3, co
     }
     else if(gtk3->length > 0 && gtk4->length > 0)
     {
-        if(ffStrbufIgnCaseComp(gtk3, gtk4) == 0)
+        if(ffStrbufIgnCaseEqual(gtk3, gtk4))
         {
             ffStrbufAppend(buffer, gtk4);
             ffStrbufAppendS(buffer, " [GTK3/4]");

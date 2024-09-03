@@ -1,6 +1,6 @@
 #include "io.h"
+#include "fastfetch.h"
 #include "util/stringUtils.h"
-#include "util/unused.h"
 
 #include <fcntl.h>
 #include <termios.h>
@@ -8,8 +8,10 @@
 #include <dirent.h>
 #include <errno.h>
 
-#if __has_include(<wordexp.h>)
-#include <wordexp.h>
+#if FF_HAVE_WORDEXP
+    #include <wordexp.h>
+#else
+    #warning "<wordexp.h> not available"
 #endif
 
 static void createSubfolders(const char* fileName)
@@ -112,7 +114,7 @@ bool ffPathExpandEnv(FF_MAYBE_UNUSED const char* in, FF_MAYBE_UNUSED FFstrbuf* o
 {
     bool result = false;
 
-    #if __has_include(<wordexp.h>) // https://github.com/termux/termux-packages/pull/7056
+    #if FF_HAVE_WORDEXP // https://github.com/termux/termux-packages/pull/7056
 
     wordexp_t exp;
     if(wordexp(in, &exp, 0) != 0)
@@ -131,31 +133,39 @@ bool ffPathExpandEnv(FF_MAYBE_UNUSED const char* in, FF_MAYBE_UNUSED FFstrbuf* o
     return result;
 }
 
+static int ftty = -1;
+static struct termios oldTerm;
+void restoreTerm(void)
+{
+    tcsetattr(ftty, TCSAFLUSH, &oldTerm);
+}
+
 const char* ffGetTerminalResponse(const char* request, const char* format, ...)
 {
-    struct termios oldTerm, newTerm;
-    if(tcgetattr(STDIN_FILENO, &oldTerm) == -1)
-        return "tcgetattr(STDIN_FILENO, &oldTerm) failed";
-
-    newTerm = oldTerm;
-    newTerm.c_lflag &= (tcflag_t) ~(ICANON | ECHO);
-    if(tcsetattr(STDIN_FILENO, TCSANOW, &newTerm) == -1)
-        return "tcsetattr(STDIN_FILENO, TCSANOW, &newTerm)";
-
-    fputs(request, stdout);
-    fflush(stdout);
-
-    //Give the terminal 35ms to respond
-    if(poll(&(struct pollfd) { .fd = STDIN_FILENO, .events = POLLIN }, 1, FF_IO_TERM_RESP_WAIT_MS) <= 0)
+    if (ftty < 0)
     {
-        tcsetattr(STDIN_FILENO, TCSANOW, &oldTerm);
-        return "poll() timeout or failed";
+        ftty = open("/dev/tty", O_RDWR | O_NOCTTY | O_CLOEXEC | O_NONBLOCK);
+        if (ftty < 0)
+            return "open(\"/dev/tty\", O_RDWR | O_NOCTTY | O_CLOEXEC) failed";
+
+        if(tcgetattr(ftty, &oldTerm) == -1)
+            return "tcgetattr(STDIN_FILENO, &oldTerm) failed";
+
+        struct termios newTerm = oldTerm;
+        newTerm.c_lflag &= (tcflag_t) ~(ICANON | ECHO);
+        if(tcsetattr(ftty, TCSAFLUSH, &newTerm) == -1)
+            return "tcsetattr(STDIN_FILENO, TCSAFLUSH, &newTerm)";
+        atexit(restoreTerm);
     }
 
-    char buffer[512];
-    ssize_t bytesRead = read(STDIN_FILENO, buffer, sizeof(buffer) - 1);
+    ffWriteFDData(ftty, strlen(request), request);
 
-    tcsetattr(STDIN_FILENO, TCSANOW, &oldTerm);
+    //Give the terminal some time to respond
+    if(poll(&(struct pollfd) { .fd = ftty, .events = POLLIN }, 1, FF_IO_TERM_RESP_WAIT_MS) <= 0)
+        return "poll() timeout or failed";
+
+    char buffer[512];
+    ssize_t bytesRead = read(ftty, buffer, sizeof(buffer) - 1);
 
     if(bytesRead <= 0)
         return "read(STDIN_FILENO, buffer, sizeof(buffer) - 1) failed";
@@ -201,7 +211,11 @@ bool ffSuppressIO(bool suppress)
 
 void listFilesRecursively(uint32_t baseLength, FFstrbuf* folder, uint8_t indentation, const char* folderName, bool pretty)
 {
-    DIR* dir = opendir(folder->chars);
+    FF_AUTO_CLOSE_FD int dfd = open(folder->chars, O_RDONLY);
+    if (dfd < 0)
+        return;
+
+    DIR* dir = fdopendir(dfd);
     if(dir == NULL)
         return;
 
@@ -218,11 +232,24 @@ void listFilesRecursively(uint32_t baseLength, FFstrbuf* folder, uint8_t indenta
 
     while((entry = readdir(dir)) != NULL)
     {
-        if(entry->d_type == DT_DIR)
-        {
-            if(ffStrEquals(entry->d_name, ".") || ffStrEquals(entry->d_name, ".."))
-                continue;
+        if(entry->d_name[0] == '.') // skip hidden files
+            continue;
 
+        bool isDir = false;
+#ifndef __sun
+        if(entry->d_type != DT_UNKNOWN && entry->d_type != DT_LNK)
+            isDir = entry->d_type == DT_DIR;
+        else
+#endif
+        {
+            struct stat stbuf;
+            if (fstatat(dfd, entry->d_name, &stbuf, 0) < 0)
+                isDir = false;
+            else
+                isDir = S_ISDIR(stbuf.st_mode);
+        }
+        if (isDir)
+        {
             ffStrbufAppendS(folder, entry->d_name);
             ffStrbufAppendC(folder, '/');
             listFilesRecursively(baseLength, folder, (uint8_t) (indentation + 1), entry->d_name, pretty);

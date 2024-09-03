@@ -1,12 +1,15 @@
 #include "fastfetch.h"
 #include "common/properties.h"
+#include "common/io/io.h"
+#include "util/mallocHelper.h"
 
 #include <stdlib.h>
+#include <ctype.h>
 #ifdef _WIN32
     #include "util/windows/getline.h"
 #endif
 
-static bool parsePropLinePointer(const char** line, const char* start, FFstrbuf* buffer)
+bool ffParsePropLinePointer(const char** line, const char* start, FFstrbuf* buffer)
 {
     if(**line == '\0')
         return false;
@@ -30,7 +33,7 @@ static bool parsePropLinePointer(const char** line, const char* start, FFstrbuf*
         }
 
         //Line doesn't match start, skip it
-        if(**line != *start || **line == '\0')
+        if(tolower(**line) != tolower(*start) || **line == '\0')
             return false;
 
         //Line and start match, continue testing
@@ -67,14 +70,9 @@ static bool parsePropLinePointer(const char** line, const char* start, FFstrbuf*
     return true;
 }
 
-bool ffParsePropLine(const char* line, const char* start, FFstrbuf* buffer)
-{
-    return parsePropLinePointer(&line, start, buffer);
-}
-
 bool ffParsePropLines(const char* lines, const char* start, FFstrbuf* buffer)
 {
-    while(!parsePropLinePointer(&lines, start, buffer))
+    while(!ffParsePropLinePointer(&lines, start, buffer))
     {
         while(*lines != '\0' && *lines != '\n')
             ++lines;
@@ -95,50 +93,44 @@ bool ffParsePropLines(const char* lines, const char* start, FFstrbuf* buffer)
 
 bool ffParsePropFileValues(const char* filename, uint32_t numQueries, FFpropquery* queries)
 {
-    FILE* file = fopen(filename, "r");
-    if(file == NULL)
+    FF_AUTO_CLOSE_FILE FILE* file = fopen(filename, "r");
+    if (file == NULL)
         return false;
 
-    bool valueStorage[4];
-    bool* unsetValues;
+    bool valueStorage[32];
+    bool* unsetValues = valueStorage;
 
-    if(numQueries > sizeof(valueStorage) / sizeof(valueStorage[0]))
+    if (numQueries > sizeof(valueStorage) / sizeof(valueStorage[0]))
         unsetValues = malloc(sizeof(bool) * numQueries);
-    else
-        unsetValues = valueStorage;
 
     bool allSet = true;
-    for(uint32_t i = 0; i < numQueries; i++)
+    for (uint32_t i = 0; i < numQueries; i++)
     {
-        if((unsetValues[i] = queries[i].buffer->length == 0))
+        unsetValues[i] = queries[i].buffer->length == 0;
+        if (unsetValues[i])
             allSet = false;
     }
 
-    if(allSet)
-        goto done;
-
-    char* line = NULL;
-    size_t len = 0;
-
-    while (getline(&line, &len, file) != -1)
+    if (!allSet)
     {
-        for(uint32_t i = 0; i < numQueries; i++)
-        {
-            if(!unsetValues[i])
-                continue;
+        FF_AUTO_FREE char* line = NULL;
+        size_t len = 0;
 
-            uint32_t currentLength = queries[i].buffer->length;
-            queries[i].buffer->length = 0;
-            if(!ffParsePropLine(line, queries[i].start, queries[i].buffer))
-                queries[i].buffer->length = currentLength;
+        while (getline(&line, &len, file) != -1)
+        {
+            for(uint32_t i = 0; i < numQueries; i++)
+            {
+                if(!unsetValues[i])
+                    continue;
+
+                uint32_t currentLength = queries[i].buffer->length;
+                queries[i].buffer->length = 0;
+                if(!ffParsePropLine(line, queries[i].start, queries[i].buffer))
+                    queries[i].buffer->length = currentLength;
+            }
         }
     }
 
-    if(line != NULL)
-        free(line);
-
-done:
-    fclose(file);
     if(unsetValues != valueStorage)
         free(unsetValues);
     return true;
@@ -154,16 +146,13 @@ bool ffParsePropFileListValues(const FFlist* list, const char* relativeFile, uin
 {
     bool foundAFile = false;
 
-    FF_STRBUF_AUTO_DESTROY baseDir = ffStrbufCreateA(64);
-
     FF_LIST_FOR_EACH(FFstrbuf, dirPrefix, *list)
     {
-        //We need to copy the dir each time, because it used by multiple threads, so we can't directly write to it.
-        ffStrbufSet(&baseDir, dirPrefix);
-        ffStrbufAppendS(&baseDir, relativeFile);
-
-        if(ffParsePropFileValues(baseDir.chars, numQueries, queries))
+        const uint32_t dirPrefixLength = dirPrefix->length;
+        ffStrbufAppendS(dirPrefix, relativeFile);
+        if(ffParsePropFileValues(dirPrefix->chars, numQueries, queries))
             foundAFile = true;
+        ffStrbufSubstrBefore(dirPrefix, dirPrefixLength);
 
         bool allSet = true;
         for(uint32_t k = 0; k < numQueries; k++)

@@ -5,7 +5,7 @@
 #include "modules/brightness/brightness.h"
 #include "util/stringUtils.h"
 
-#define FF_BRIGHTNESS_NUM_FORMAT_ARGS 5
+#define FF_BRIGHTNESS_NUM_FORMAT_ARGS 6
 
 void ffPrintBrightness(FFBrightnessOptions* options)
 {
@@ -37,9 +37,10 @@ void ffPrintBrightness(FFBrightnessOptions* options)
         else
         {
             uint32_t moduleIndex = result.length == 1 ? 0 : index + 1;
-            FF_PARSE_FORMAT_STRING_CHECKED(&key, &options->moduleArgs.key, 2, ((FFformatarg[]){
-                {FF_FORMAT_ARG_TYPE_UINT, &moduleIndex},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &item->name}
+            FF_PARSE_FORMAT_STRING_CHECKED(&key, &options->moduleArgs.key, 3, ((FFformatarg[]){
+                {FF_FORMAT_ARG_TYPE_UINT, &moduleIndex, "index"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &item->name, "name"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &options->moduleArgs.keyIcon, "icon"},
             }));
         }
 
@@ -52,7 +53,7 @@ void ffPrintBrightness(FFBrightnessOptions* options)
 
             if (instance.config.display.percentType & FF_PERCENTAGE_TYPE_BAR_BIT)
             {
-                ffPercentAppendBar(&str, percent, options->percent);
+                ffPercentAppendBar(&str, percent, options->percent, &options->moduleArgs);
             }
 
             if(instance.config.display.percentType & FF_PERCENTAGE_TYPE_NUM_BIT)
@@ -60,21 +61,24 @@ void ffPrintBrightness(FFBrightnessOptions* options)
                 if(str.length > 0)
                     ffStrbufAppendC(&str, ' ');
 
-                ffPercentAppendNum(&str, percent, options->percent, str.length > 0);
+                ffPercentAppendNum(&str, percent, options->percent, str.length > 0, &options->moduleArgs);
             }
 
             ffStrbufPutTo(&str, stdout);
         }
         else
         {
-            FF_STRBUF_AUTO_DESTROY valueStr = ffStrbufCreate();
-            ffPercentAppendNum(&valueStr, percent, options->percent, false);
+            FF_STRBUF_AUTO_DESTROY valueNum = ffStrbufCreate();
+            ffPercentAppendNum(&valueNum, percent, options->percent, false, &options->moduleArgs);
+            FF_STRBUF_AUTO_DESTROY valueBar = ffStrbufCreate();
+            ffPercentAppendBar(&valueBar, percent, options->percent, &options->moduleArgs);
             FF_PRINT_FORMAT_CHECKED(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY, FF_BRIGHTNESS_NUM_FORMAT_ARGS, ((FFformatarg[]) {
-                {FF_FORMAT_ARG_TYPE_STRBUF, &valueStr},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &item->name},
-                {FF_FORMAT_ARG_TYPE_DOUBLE, &item->max},
-                {FF_FORMAT_ARG_TYPE_DOUBLE, &item->min},
-                {FF_FORMAT_ARG_TYPE_DOUBLE, &item->current},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &valueNum, "percentage"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &item->name, "name"},
+                {FF_FORMAT_ARG_TYPE_DOUBLE, &item->max, "max"},
+                {FF_FORMAT_ARG_TYPE_DOUBLE, &item->min, "min"},
+                {FF_FORMAT_ARG_TYPE_DOUBLE, &item->current, "current"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &item->current, "percentage-bar"},
             }));
         }
 
@@ -154,12 +158,6 @@ void ffGenerateBrightnessJsonResult(FF_MAYBE_UNUSED FFBrightnessOptions* options
         return;
     }
 
-    if(result.length == 0)
-    {
-        yyjson_mut_obj_add_str(doc, module, "error", "No result is detected.");
-        return;
-    }
-
     yyjson_mut_val* arr = yyjson_mut_arr(doc);
     yyjson_mut_obj_add_val(doc, module, "result", arr);
 
@@ -181,11 +179,12 @@ void ffGenerateBrightnessJsonResult(FF_MAYBE_UNUSED FFBrightnessOptions* options
 void ffPrintBrightnessHelpFormat(void)
 {
     FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_BRIGHTNESS_MODULE_NAME, "{1}", FF_BRIGHTNESS_NUM_FORMAT_ARGS, ((const char* []) {
-        "Screen brightness (percentage)",
-        "Screen name",
-        "Maximum brightness value",
-        "Minimum brightness value",
-        "Current brightness value",
+        "Screen brightness (percentage num) - percentage",
+        "Screen name - name",
+        "Maximum brightness value - max",
+        "Minimum brightness value - min",
+        "Current brightness value - current",
+        "Screen brightness (percentage bar) - percentage-bar",
     }));
 }
 
@@ -202,7 +201,7 @@ void ffInitBrightnessOptions(FFBrightnessOptions* options)
         ffPrintBrightnessHelpFormat,
         ffGenerateBrightnessJsonConfig
     );
-    ffOptionInitModuleArg(&options->moduleArgs);
+    ffOptionInitModuleArg(&options->moduleArgs, "󰯪");
 
     options->ddcciSleep = 10;
     options->percent = (FFColorRangeConfig) { 100, 100 };

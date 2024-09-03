@@ -1,6 +1,9 @@
 #include "bios.h"
 #include "util/smbiosHelper.h"
 
+#ifdef _WIN32
+#include "util/windows/registry.h"
+
 #include <ntstatus.h>
 #include <winternl.h>
 
@@ -24,7 +27,7 @@ typedef struct _SYSTEM_BOOT_ENVIRONMENT_INFORMATION
         };
     };
 } SYSTEM_BOOT_ENVIRONMENT_INFORMATION;
-
+#endif
 
 typedef struct FFSmbiosBios
 {
@@ -35,7 +38,7 @@ typedef struct FFSmbiosBios
     uint16_t BiosStartingAddressSegment; // varies
     uint8_t BiosReleaseDate; // string
     uint8_t BiosRomSize; // string
-    uint32_t BiosCharacteristics; // bit field
+    uint64_t BiosCharacteristics; // bit field
 
     // 2.4+
     uint8_t BiosCharacteristicsExtensionBytes[2]; // bit field
@@ -46,11 +49,18 @@ typedef struct FFSmbiosBios
 
     // 3.1+
     uint16_t ExtendedBiosRomSize; // bit field
-} FFSmbiosBios;
+} __attribute__((__packed__)) FFSmbiosBios;
+
+static_assert(offsetof(FFSmbiosBios, ExtendedBiosRomSize) == 0x18,
+    "FFSmbiosBios: Wrong struct alignment");
 
 const char* ffDetectBios(FFBiosResult* bios)
 {
-    const FFSmbiosBios* data = (const FFSmbiosBios*) (*ffGetSmbiosHeaderTable())[FF_SMBIOS_TYPE_BIOS];
+    const FFSmbiosHeaderTable* smbiosTable = ffGetSmbiosHeaderTable();
+    if (!smbiosTable)
+        return "Failed to get SMBIOS data";
+
+    const FFSmbiosBios* data = (const FFSmbiosBios*) (*smbiosTable)[FF_SMBIOS_TYPE_BIOS];
     if (!data)
         return "BIOS section is not found in SMBIOS data";
 
@@ -66,6 +76,7 @@ const char* ffDetectBios(FFBiosResult* bios)
     if (data->Header.Length > offsetof(FFSmbiosBios, SystemBiosMajorRelease))
         ffStrbufSetF(&bios->release, "%u.%u", data->SystemBiosMajorRelease, data->SystemBiosMinorRelease);
 
+    #ifdef _WIN32
     // Same as GetFirmwareType, but support (?) Windows 7
     // https://ntdoc.m417z.com/system_information_class
     SYSTEM_BOOT_ENVIRONMENT_INFORMATION sbei;
@@ -78,6 +89,7 @@ const char* ffDetectBios(FFBiosResult* bios)
             default: break;
         }
     }
+    #endif
 
     return NULL;
 }

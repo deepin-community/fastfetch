@@ -7,13 +7,23 @@
 #import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
 
+#ifdef MAC_OS_X_VERSION_10_15
 extern CFDictionaryRef CoreDisplay_DisplayCreateInfoDictionary(CGDirectDisplayID display) __attribute__((weak_import));
+#else
+#include <IOKit/graphics/IOGraphicsLib.h>
+#endif
 
 static bool detectHdrSupportWithNSScreen(FFDisplayResult* display)
 {
     NSScreen* mainScreen = NSScreen.mainScreen;
     if (display->primary)
+    {
+        #ifdef MAC_OS_X_VERSION_10_15
         return mainScreen.maximumPotentialExtendedDynamicRangeColorComponentValue > 1;
+        #else
+        return mainScreen.maximumExtendedDynamicRangeColorComponentValue > 1;
+        #endif
+    }
     else
     {
         for (NSScreen* screen in NSScreen.screens)
@@ -22,7 +32,11 @@ static bool detectHdrSupportWithNSScreen(FFDisplayResult* display)
             NSNumber* screenNumber = [screen.deviceDescription valueForKey:@"NSScreenNumber"];
             if (screenNumber && screenNumber.longValue == (long) display->id)
             {
+                #ifdef MAC_OS_X_VERSION_10_15
                 return screen.maximumPotentialExtendedDynamicRangeColorComponentValue > 1;
+                #else
+                return screen.maximumExtendedDynamicRangeColorComponentValue > 1;
+                #endif
             }
         }
     }
@@ -31,13 +45,19 @@ static bool detectHdrSupportWithNSScreen(FFDisplayResult* display)
 
 const char* ffDetectMonitor(FFlist* results)
 {
+    #ifdef MAC_OS_X_VERSION_10_15
     if(!CoreDisplay_DisplayCreateInfoDictionary) return "CoreDisplay_DisplayCreateInfoDictionary is not available";
-
+    #endif
     const FFDisplayServerResult* displayServer = ffConnectDisplayServer();
 
     FF_LIST_FOR_EACH(FFDisplayResult, display, displayServer->displays)
     {
+        #ifdef MAC_OS_X_VERSION_10_15
         CFDictionaryRef FF_CFTYPE_AUTO_RELEASE displayInfo = CoreDisplay_DisplayCreateInfoDictionary((CGDirectDisplayID) display->id);
+        #else
+        io_service_t servicePort = CGDisplayIOServicePort((CGDirectDisplayID) display->id);
+        CFDictionaryRef FF_CFTYPE_AUTO_RELEASE displayInfo = IODisplayCreateInfoDictionary(servicePort, kIODisplayOnlyPreferredName);
+        #endif
         if(!displayInfo) continue;
 
         bool isVirtual = false;
@@ -46,7 +66,7 @@ const char* ffDetectMonitor(FFlist* results)
 
         uint8_t edidData[128] = {};
         uint32_t edidLength = 0;
-        if (ffCfDictGetData(displayInfo, CFSTR("IODisplayEDID"), 0, sizeof(edidData), edidData, &edidLength) == NULL)
+        if (ffCfDictGetData(displayInfo, CFSTR(kIODisplayEDIDKey), 0, sizeof(edidData), edidData, &edidLength) == NULL)
         {
             uint32_t width, height;
             ffEdidGetPhysicalResolution(edidData, &width, &height);
@@ -79,10 +99,22 @@ const char* ffDetectMonitor(FFlist* results)
         monitor->physicalHeight = (uint32_t) (size.height + 0.5);
         monitor->hdrCompatible = CFDictionaryContainsKey(displayInfo, CFSTR("ReferencePeakHDRLuminance")) ||
             detectHdrSupportWithNSScreen(display);
+        monitor->serial = CGDisplaySerialNumber((CGDirectDisplayID) display->id);
 
-        int64_t serial, year, week;
-        if (ffCfDictGetInt64(displayInfo, CFSTR("DisplaySerialNumber"), &serial) == NULL)
-            monitor->serial = (uint32_t) (uint64_t) serial;
+        FF_CFTYPE_AUTO_RELEASE CFArrayRef modes = CGDisplayCopyAllDisplayModes((CGDirectDisplayID) display->id, NULL);
+        double maxRefreshRate = 0;
+        for (uint32_t j = 0; j < CFArrayGetCount(modes); ++j)
+        {
+            CGDisplayModeRef mode = (CGDisplayModeRef) CFArrayGetValueAtIndex(modes, j);
+            if (CGDisplayModeGetWidth(mode) == (uint32_t) width && CGDisplayModeGetHeight(mode) == (uint32_t) height)
+            {
+                double refreshRate = CGDisplayModeGetRefreshRate(mode);
+                if (refreshRate > maxRefreshRate) maxRefreshRate = refreshRate;
+            }
+        }
+        monitor->refreshRate = maxRefreshRate;
+
+        int64_t year, week;
         if (ffCfDictGetInt64(displayInfo, CFSTR("DisplayYearManufacture"), &year) == NULL)
             monitor->manufactureYear = (uint16_t) year;
         if (ffCfDictGetInt64(displayInfo, CFSTR("DisplayWeekManufacture"), &week) == NULL)

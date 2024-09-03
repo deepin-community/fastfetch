@@ -33,7 +33,7 @@ static void parseBattery(FFstrbuf* dir, const char* id, FFBatteryOptions* option
 
     //capacity must exist and be not empty
     ffStrbufAppendS(dir, "/capacity");
-    bool available = ffReadFileBuffer(dir->chars, &tmpBuffer);
+    bool available = ffReadFileBuffer(dir->chars, &tmpBuffer); // This is expensive in my laptop
     ffStrbufSubstrBefore(dir, dirLength);
 
     if (!available)
@@ -169,9 +169,6 @@ const char* ffDetectBattery(FFBatteryOptions* options, FFlist* results)
         parseBattery(&baseDir, entry->d_name, options, results);
         ffStrbufSubstrBefore(&baseDir, baseDirLength);
     }
-
-    if(results->length == 0)
-        return "\"/sys/class/power_supply/\" doesn't contain any battery folder";
 
     return NULL;
 }

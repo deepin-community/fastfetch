@@ -31,8 +31,8 @@ void ffPrintPublicIp(FFPublicIpOptions* options)
     else
     {
         FF_PRINT_FORMAT_CHECKED(FF_PUBLICIP_DISPLAY_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_PUBLICIP_NUM_FORMAT_ARGS, ((FFformatarg[]) {
-            {FF_FORMAT_ARG_TYPE_STRBUF, &result.ip},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &result.location},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &result.ip, "ip"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &result.location, "location"},
         }));
     }
 
@@ -56,6 +56,12 @@ bool ffParsePublicIpCommandOptions(FFPublicIpOptions* options, const char* key, 
     if (ffStrEqualsIgnCase(subKey, "timeout"))
     {
         options->timeout = ffOptionParseUInt32(key, value);
+        return true;
+    }
+
+    if (ffStrEqualsIgnCase(subKey, "ipv6"))
+    {
+        options->ipv6 = ffOptionParseBoolean(value);
         return true;
     }
 
@@ -87,6 +93,12 @@ void ffParsePublicIpJsonObject(FFPublicIpOptions* options, yyjson_val* module)
             continue;
         }
 
+        if (ffStrEqualsIgnCase(key, "ipv6"))
+        {
+            options->ipv6 = yyjson_get_bool(val);
+            continue;
+        }
+
         ffPrintError(FF_PUBLICIP_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "Unknown JSON key %s", key);
     }
 }
@@ -100,6 +112,12 @@ void ffGeneratePublicIpJsonConfig(FFPublicIpOptions* options, yyjson_mut_doc* do
 
     if (!ffStrbufEqual(&options->url, &defaultOptions.url))
         yyjson_mut_obj_add_strbuf(doc, module, "url", &options->url);
+
+    if (defaultOptions.timeout != options->timeout)
+        yyjson_mut_obj_add_uint(doc, module, "timeout", options->timeout);
+
+    if (defaultOptions.ipv6 != options->ipv6)
+        yyjson_mut_obj_add_bool(doc, module, "ipv6", options->ipv6);
 }
 
 void ffGeneratePublicIpJsonResult(FFPublicIpOptions* options, yyjson_mut_doc* doc, yyjson_mut_val* module)
@@ -126,8 +144,8 @@ void ffGeneratePublicIpJsonResult(FFPublicIpOptions* options, yyjson_mut_doc* do
 void ffPrintPublicIpHelpFormat(void)
 {
     FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_PUBLICIP_MODULE_NAME, "{1} ({2})", FF_PUBLICIP_NUM_FORMAT_ARGS, ((const char* []) {
-        "Public IP address",
-        "Location"
+        "Public IP address - ip",
+        "Location - location",
     }));
 }
 
@@ -144,10 +162,11 @@ void ffInitPublicIpOptions(FFPublicIpOptions* options)
         ffPrintPublicIpHelpFormat,
         ffGeneratePublicIpJsonConfig
     );
-    ffOptionInitModuleArg(&options->moduleArgs);
+    ffOptionInitModuleArg(&options->moduleArgs, "󰩠");
 
     ffStrbufInit(&options->url);
     options->timeout = 0;
+    options->ipv6 = false;
 }
 
 void ffDestroyPublicIpOptions(FFPublicIpOptions* options)

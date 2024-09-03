@@ -13,11 +13,11 @@ typedef struct FFOptionsGeneral
 {
     bool multithreading;
     int32_t processingTimeout;
+    bool detectVersion;
 
     // Module options that cannot be put in module option structure
-    #if defined(__linux__) || defined(__FreeBSD__)
+    #if defined(__linux__) || defined(__FreeBSD__) || defined(__sun)
     FFstrbuf playerName;
-    FFstrbuf osFile;
     bool escapeBedrock;
     FFDsForceDrmType dsForceDrm;
     #elif defined(_WIN32)

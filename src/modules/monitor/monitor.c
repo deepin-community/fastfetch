@@ -6,7 +6,7 @@
 
 #include <math.h>
 
-#define FF_MONITOR_NUM_FORMAT_ARGS 10
+#define FF_MONITOR_NUM_FORMAT_ARGS 11
 
 void ffPrintMonitor(FFMonitorOptions* options)
 {
@@ -41,9 +41,10 @@ void ffPrintMonitor(FFMonitorOptions* options)
         else
         {
             uint32_t moduleIndex = result.length == 1 ? 0 : index + 1;
-            FF_PARSE_FORMAT_STRING_CHECKED(&key, &options->moduleArgs.key, 2, ((FFformatarg[]){
-                {FF_FORMAT_ARG_TYPE_UINT, &moduleIndex},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &display->name},
+            FF_PARSE_FORMAT_STRING_CHECKED(&key, &options->moduleArgs.key, 3, ((FFformatarg[]){
+                {FF_FORMAT_ARG_TYPE_UINT, &moduleIndex, "index"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &display->name, "name"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &options->moduleArgs.keyIcon, "icon"},
             }));
         }
 
@@ -52,6 +53,8 @@ void ffPrintMonitor(FFMonitorOptions* options)
             ffPrintLogoAndKey(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY);
 
             printf("%ux%u px", display->width, display->height);
+            if (display->refreshRate > 0)
+                printf(" @ %g Hz", ((int) (display->refreshRate * 1000 + 0.5)) / 1000.0);
             if (inch > 0)
                 printf(" - %ux%u mm (%.2f inches, %.2f ppi)\n", display->physicalWidth, display->physicalHeight, inch, ppi);
             else
@@ -69,16 +72,17 @@ void ffPrintMonitor(FFMonitorOptions* options)
                 buf[0] = '\0';
 
             FF_PRINT_FORMAT_CHECKED(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY, FF_MONITOR_NUM_FORMAT_ARGS, ((FFformatarg[]) {
-                {FF_FORMAT_ARG_TYPE_STRBUF, &display->name},
-                {FF_FORMAT_ARG_TYPE_UINT, &display->width},
-                {FF_FORMAT_ARG_TYPE_UINT, &display->height},
-                {FF_FORMAT_ARG_TYPE_UINT, &display->physicalWidth},
-                {FF_FORMAT_ARG_TYPE_UINT, &display->physicalHeight},
-                {FF_FORMAT_ARG_TYPE_DOUBLE, &inch},
-                {FF_FORMAT_ARG_TYPE_DOUBLE, &ppi},
-                {FF_FORMAT_ARG_TYPE_UINT16, &display->manufactureYear},
-                {FF_FORMAT_ARG_TYPE_UINT16, &display->manufactureWeek},
-                {FF_FORMAT_ARG_TYPE_STRING, buf},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &display->name, "name"},
+                {FF_FORMAT_ARG_TYPE_UINT, &display->width, "width"},
+                {FF_FORMAT_ARG_TYPE_UINT, &display->height, "height"},
+                {FF_FORMAT_ARG_TYPE_UINT, &display->physicalWidth, "physical-width"},
+                {FF_FORMAT_ARG_TYPE_UINT, &display->physicalHeight, "physical-height"},
+                {FF_FORMAT_ARG_TYPE_DOUBLE, &inch, "inch"},
+                {FF_FORMAT_ARG_TYPE_DOUBLE, &ppi, "ppi"},
+                {FF_FORMAT_ARG_TYPE_UINT16, &display->manufactureYear, "manufacture-year"},
+                {FF_FORMAT_ARG_TYPE_UINT16, &display->manufactureWeek, "manufacture-week"},
+                {FF_FORMAT_ARG_TYPE_STRING, buf, "serial"},
+                {FF_FORMAT_ARG_TYPE_DOUBLE, buf, "refresh-rate"},
             }));
         }
 
@@ -153,6 +157,8 @@ void ffGenerateMonitorJsonResult(FF_MAYBE_UNUSED FFMonitorOptions* options, yyjs
             yyjson_mut_obj_add_uint(doc, physical, "height", item->physicalHeight);
             yyjson_mut_obj_add_uint(doc, physical, "width", item->physicalWidth);
 
+            yyjson_mut_obj_add_real(doc, obj, "refreshRate", item->refreshRate);
+
             if (item->manufactureYear)
             {
                 yyjson_mut_val* manufactureDate = yyjson_mut_obj_add_obj(doc, obj, "manufactureDate");
@@ -180,16 +186,17 @@ void ffGenerateMonitorJsonResult(FF_MAYBE_UNUSED FFMonitorOptions* options, yyjs
 void ffPrintMonitorHelpFormat(void)
 {
     FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_MONITOR_MODULE_NAME, "{2}x{3} px - {4}x{5} mm ({6} inches, {7} ppi)", FF_MONITOR_NUM_FORMAT_ARGS, ((const char* []) {
-        "Display name",
-        "Native resolution width in pixels",
-        "Native resolution height in pixels",
-        "Physical width in millimeters",
-        "Physical height in millimeters",
-        "Physical diagonal length in inches",
-        "Pixels per inch (PPI)",
-        "Year of manufacturing",
-        "Nth week of manufacturing in the year",
-        "Serial number",
+        "Display name - name",
+        "Native resolution width in pixels - width",
+        "Native resolution height in pixels - height",
+        "Physical width in millimeters - physical-width",
+        "Physical height in millimeters - physical-height",
+        "Physical diagonal length in inches - inch",
+        "Pixels per inch (PPI) - ppi",
+        "Year of manufacturing - manufacture-year",
+        "Nth week of manufacturing in the year - manufacture-week",
+        "Serial number - serial",
+        "Maximum refresh rate in Hz - refresh-rate",
     }));
 }
 
@@ -206,7 +213,7 @@ void ffInitMonitorOptions(FFMonitorOptions* options)
         ffPrintMonitorHelpFormat,
         ffGenerateMonitorJsonConfig
     );
-    ffOptionInitModuleArg(&options->moduleArgs);
+    ffOptionInitModuleArg(&options->moduleArgs, "󰹑");
 }
 
 void ffDestroyMonitorOptions(FFMonitorOptions* options)

@@ -28,11 +28,16 @@ private:
 extern "C"
 const char* ffGPUDetectByDirectX(FF_MAYBE_UNUSED const FFGPUOptions* options, FFlist* gpus)
 {
-    FF_LIBRARY_LOAD(libdxcore, nullptr, "dlopen libdxcore.so failed. Make sure WSLg is enabled", "/usr/lib/wsl/lib/libdxcore" FF_LIBRARY_EXTENSION, 4)
+    FF_LIBRARY_LOAD(libdxcore, nullptr, "dlopen libdxcore.so failed", "/usr/lib/wsl/lib/libdxcore" FF_LIBRARY_EXTENSION, 4)
     // DXCoreCreateAdapterFactory is a reloaded function, so we can't use FF_LIBRARY_LOAD_SYMBOL_MESSAGE here
     typedef HRESULT (*DXCoreCreateAdapterFactory_t)(REFIID riid, void** ppvFactory);
+
+#ifndef FF_DISABLE_DLOPEN
     auto ffDXCoreCreateAdapterFactory = (DXCoreCreateAdapterFactory_t) dlsym(libdxcore, "DXCoreCreateAdapterFactory");
     if(ffDXCoreCreateAdapterFactory == nullptr) return "dlsym DXCoreCreateAdapterFactory failed";
+#else
+    auto ffDXCoreCreateAdapterFactory = (DXCoreCreateAdapterFactory_t) DXCoreCreateAdapterFactory;
+#endif
 
     IDXCoreAdapterFactory *factory = nullptr;
 
@@ -66,8 +71,10 @@ const char* ffGPUDetectByDirectX(FF_MAYBE_UNUSED const FFGPUOptions* options, FF
         FFGPUResult* gpu = (FFGPUResult*) ffListAdd(gpus);
         ffStrbufInitS(&gpu->name, desc);
         gpu->coreCount = FF_GPU_CORE_COUNT_UNSET;
+        gpu->coreUsage = FF_GPU_CORE_USAGE_UNSET;
         gpu->temperature = FF_GPU_TEMP_UNSET;
         gpu->frequency = FF_GPU_FREQUENCY_UNSET;
+        gpu->deviceId = 0;
         ffStrbufInitStatic(&gpu->platformApi, "DXCore");
 
         ffStrbufInit(&gpu->driver);
@@ -99,7 +106,6 @@ const char* ffGPUDetectByDirectX(FF_MAYBE_UNUSED const FFGPUOptions* options, FF
             const char* vendorStr = ffGetGPUVendorString((unsigned) hardwareId.vendorID);
             ffStrbufSetStatic(&gpu->vendor, vendorStr);
 
-            #ifdef FF_USE_PROPRIETARY_GPU_DRIVER_API
             if (vendorStr == FF_GPU_VENDOR_NAME_NVIDIA && (options->driverSpecific || options->temp))
             {
                 FFGpuDriverCondition cond = {
@@ -115,11 +121,12 @@ const char* ffGPUDetectByDirectX(FF_MAYBE_UNUSED const FFGPUOptions* options, FF
                     .temp = options->temp ? &gpu->temperature : NULL,
                     .memory = options->driverSpecific ? &gpu->dedicated : NULL,
                     .coreCount = options->driverSpecific ? (uint32_t*) &gpu->coreCount : NULL,
+                    .coreUsage = options->driverSpecific ? &gpu->coreUsage : NULL,
                     .type = &gpu->type,
-                    .frequency = &gpu->frequency,
+                    .frequency = options->driverSpecific ? &gpu->frequency : NULL,
+                    .name = options->driverSpecific ? &gpu->name : NULL,
                 }, "/usr/lib/wsl/lib/libnvidia-ml.so");
             }
-            #endif
         }
     }
 

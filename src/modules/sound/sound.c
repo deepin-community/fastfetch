@@ -5,7 +5,7 @@
 #include "modules/sound/sound.h"
 #include "util/stringUtils.h"
 
-#define FF_SOUND_NUM_FORMAT_ARGS 4
+#define FF_SOUND_NUM_FORMAT_ARGS 5
 
 static void printDevice(FFSoundOptions* options, const FFSoundDevice* device, uint8_t index)
 {
@@ -24,7 +24,7 @@ static void printDevice(FFSoundOptions* options, const FFSoundDevice* device, ui
                 if (str.length)
                     ffStrbufAppendC(&str, ' ');
 
-                ffPercentAppendBar(&str, device->volume, options->percent);
+                ffPercentAppendBar(&str, device->volume, options->percent, &options->moduleArgs);
             }
 
             if (instance.config.display.percentType & FF_PERCENTAGE_TYPE_NUM_BIT)
@@ -32,7 +32,7 @@ static void printDevice(FFSoundOptions* options, const FFSoundDevice* device, ui
                 if (str.length)
                     ffStrbufAppendC(&str, ' ');
 
-                ffPercentAppendNum(&str, device->volume, options->percent, str.length > 0);
+                ffPercentAppendNum(&str, device->volume, options->percent, str.length > 0, &options->moduleArgs);
             }
         }
 
@@ -46,14 +46,17 @@ static void printDevice(FFSoundOptions* options, const FFSoundDevice* device, ui
     }
     else
     {
-        FF_STRBUF_AUTO_DESTROY percentageStr = ffStrbufCreate();
-        ffPercentAppendNum(&percentageStr, device->volume, options->percent, false);
+        FF_STRBUF_AUTO_DESTROY percentageNum = ffStrbufCreate();
+        ffPercentAppendNum(&percentageNum, device->volume, options->percent, false, &options->moduleArgs);
+        FF_STRBUF_AUTO_DESTROY percentageBar = ffStrbufCreate();
+        ffPercentAppendBar(&percentageBar, device->volume, options->percent, &options->moduleArgs);
 
         FF_PRINT_FORMAT_CHECKED(FF_SOUND_MODULE_NAME, index, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_SOUND_NUM_FORMAT_ARGS, ((FFformatarg[]) {
-            {FF_FORMAT_ARG_TYPE_BOOL, &device->main},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &device->name},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &percentageStr},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &device->identifier}
+            {FF_FORMAT_ARG_TYPE_BOOL, &device->main, "is-main"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &device->name, "name"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &percentageNum, "volume-percentage"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &device->identifier, "identifier"},
+            {FF_FORMAT_ARG_TYPE_STRBUF, &percentageBar, "volume-percentage-bar"},
         }));
     }
 }
@@ -200,12 +203,6 @@ void ffGenerateSoundJsonResult(FF_MAYBE_UNUSED FFSoundOptions* options, yyjson_m
         return;
     }
 
-    if(result.length == 0)
-    {
-        yyjson_mut_obj_add_str(doc, module, "error", "No active sound devices found");
-        return;
-    }
-
     yyjson_mut_val* arr = yyjson_mut_obj_add_arr(doc, module, "result");
     FF_LIST_FOR_EACH(FFSoundDevice, item, result)
     {
@@ -232,10 +229,11 @@ void ffGenerateSoundJsonResult(FF_MAYBE_UNUSED FFSoundOptions* options, yyjson_m
 void ffPrintSoundHelpFormat(void)
 {
     FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_SOUND_MODULE_NAME, "{2} ({3}%)", FF_SOUND_NUM_FORMAT_ARGS, ((const char* []) {
-        "Is main sound device",
-        "Device name",
-        "Volume",
-        "Identifier"
+        "Is main sound device - is-main",
+        "Device name - name",
+        "Volume (in percentage num) - volume-percentage",
+        "Identifier - identifier",
+        "Volume (in percentage bar) - volume-percentage-bar",
     }));
 }
 
@@ -252,7 +250,7 @@ void ffInitSoundOptions(FFSoundOptions* options)
         ffPrintSoundHelpFormat,
         ffGenerateSoundJsonConfig
     );
-    ffOptionInitModuleArg(&options->moduleArgs);
+    ffOptionInitModuleArg(&options->moduleArgs, "");
 
     options->soundType = FF_SOUND_TYPE_MAIN;
     options->percent = (FFColorRangeConfig) { 80, 90 };

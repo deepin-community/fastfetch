@@ -12,15 +12,12 @@
         "uptime",
         {
             "type": "battery",
-            "format": "{/4}{-}{/}{4}%{?5} [{5}]{?}"
+            "format": "{/4}{-}{/}{4}{?5} [{5}]{?}"
         },
         "break",
         "packages",
         "shell",
-        {
-            "type": "display",
-            "key": "Display"
-        },
+        "display",
         "terminal",
         "break",
         "cpu",

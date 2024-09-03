@@ -17,6 +17,8 @@ typedef struct FFDisk
 
     uint32_t filesUsed;
     uint32_t filesTotal;
+
+    uint64_t createTime;
 } FFDisk;
 
 /**
@@ -24,3 +26,6 @@ typedef struct FFDisk
  * If error is not set, disks contains at least one disk.
  */
 const char* ffDetectDisks(FFDiskOptions* options, FFlist* disks /* list of FFDisk */);
+
+const char* ffDetectDisksImpl(FFDiskOptions* options, FFlist* disks);
+bool ffDiskMatchMountpoint(FFDiskOptions* options, const char* mountpoint);

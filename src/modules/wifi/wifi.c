@@ -4,7 +4,7 @@
 #include "modules/wifi/wifi.h"
 #include "util/stringUtils.h"
 
-#define FF_WIFI_NUM_FORMAT_ARGS 10
+#define FF_WIFI_NUM_FORMAT_ARGS 11
 
 void ffPrintWifi(FFWifiOptions* options)
 {
@@ -30,33 +30,68 @@ void ffPrintWifi(FFWifiOptions* options)
         if(options->moduleArgs.outputFormat.length == 0)
         {
             ffPrintLogoAndKey(FF_WIFI_MODULE_NAME, moduleIndex, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT);
+
+            FF_STRBUF_AUTO_DESTROY buffer = ffStrbufCreate();
             if(item->conn.ssid.length)
             {
-                ffStrbufWriteTo(&item->conn.ssid, stdout);
-                if(item->conn.protocol.length)
-                    printf(" - %s", item->conn.protocol.chars);
-                if(item->conn.security.length)
-                    printf(" - %s", item->conn.security.chars);
-                putchar('\n');
+                if(item->conn.signalQuality == item->conn.signalQuality)
+                {
+                    if(instance.config.display.percentType & FF_PERCENTAGE_TYPE_BAR_BIT)
+                    {
+                        ffPercentAppendBar(&buffer, item->conn.signalQuality, options->percent, &options->moduleArgs);
+                        ffStrbufAppendC(&buffer, ' ');
+                    }
+                }
+
+                if (!(instance.config.display.percentType & FF_PERCENTAGE_TYPE_HIDE_OTHERS_BIT))
+                {
+                    ffStrbufAppend(&buffer, &item->conn.ssid);
+
+                    if(item->conn.protocol.length)
+                    {
+                        ffStrbufAppendS(&buffer, " - ");
+                        ffStrbufAppend(&buffer, &item->conn.protocol);
+                    }
+                    if(item->conn.security.length)
+                    {
+                        ffStrbufAppendS(&buffer, " - ");
+                        ffStrbufAppend(&buffer, &item->conn.security);
+                    }
+                    ffStrbufAppendC(&buffer, ' ');
+                }
+
+                if(item->conn.signalQuality == item->conn.signalQuality)
+                {
+                    if(instance.config.display.percentType & FF_PERCENTAGE_TYPE_NUM_BIT)
+                        ffPercentAppendNum(&buffer, item->conn.signalQuality, options->percent, buffer.length > 0, &options->moduleArgs);
+                }
+
+                ffStrbufTrimRight(&buffer, ' ');
             }
             else
             {
-                puts(item->inf.status.chars);
+                ffStrbufAppend(&buffer, &item->inf.status);
             }
+            ffStrbufPutTo(&buffer, stdout);
         }
         else
         {
+            FF_STRBUF_AUTO_DESTROY percentNum = ffStrbufCreate();
+            ffPercentAppendNum(&percentNum, item->conn.signalQuality, options->percent, false, &options->moduleArgs);
+            FF_STRBUF_AUTO_DESTROY percentBar = ffStrbufCreate();
+            ffPercentAppendBar(&percentBar, item->conn.signalQuality, options->percent, &options->moduleArgs);
             FF_PRINT_FORMAT_CHECKED(FF_WIFI_MODULE_NAME, moduleIndex, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_WIFI_NUM_FORMAT_ARGS, ((FFformatarg[]){
-                {FF_FORMAT_ARG_TYPE_STRBUF, &item->inf.description},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &item->inf.status},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &item->conn.status},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &item->conn.ssid},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &item->conn.macAddress},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &item->conn.protocol},
-                {FF_FORMAT_ARG_TYPE_DOUBLE, &item->conn.signalQuality},
-                {FF_FORMAT_ARG_TYPE_DOUBLE, &item->conn.rxRate},
-                {FF_FORMAT_ARG_TYPE_DOUBLE, &item->conn.txRate},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &item->conn.security},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &item->inf.description, "inf-desc"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &item->inf.status, "inf-status"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &item->conn.status, "status"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &item->conn.ssid, "ssid"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &item->conn.bssid, "bssid"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &item->conn.protocol, "protocol"},
+                {FF_FORMAT_ARG_TYPE_DOUBLE, &percentNum, "signal-quality"},
+                {FF_FORMAT_ARG_TYPE_DOUBLE, &item->conn.rxRate, "rx-rate"},
+                {FF_FORMAT_ARG_TYPE_DOUBLE, &item->conn.txRate, "tx-rate"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &item->conn.security, "security"},
+                {FF_FORMAT_ARG_TYPE_STRBUF, &percentBar, "signal-quality-bar"},
             }));
         }
 
@@ -64,7 +99,7 @@ void ffPrintWifi(FFWifiOptions* options)
         ffStrbufDestroy(&item->inf.status);
         ffStrbufDestroy(&item->conn.status);
         ffStrbufDestroy(&item->conn.ssid);
-        ffStrbufDestroy(&item->conn.macAddress);
+        ffStrbufDestroy(&item->conn.bssid);
         ffStrbufDestroy(&item->conn.protocol);
         ffStrbufDestroy(&item->conn.security);
     }
@@ -75,6 +110,9 @@ bool ffParseWifiCommandOptions(FFWifiOptions* options, const char* key, const ch
     const char* subKey = ffOptionTestPrefix(key, FF_WIFI_MODULE_NAME);
     if (!subKey) return false;
     if (ffOptionParseModuleArgs(key, subKey, value, &options->moduleArgs))
+        return true;
+
+    if (ffPercentParseCommandOptions(key, subKey, value, &options->percent))
         return true;
 
     return false;
@@ -93,6 +131,9 @@ void ffParseWifiJsonObject(FFWifiOptions* options, yyjson_val* module)
         if (ffJsonConfigParseModuleArgs(key, val, &options->moduleArgs))
             continue;
 
+        if (ffPercentParseJsonObject(key, val, &options->percent))
+            continue;
+
         ffPrintError(FF_WIFI_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "Unknown JSON key %s", key);
     }
 }
@@ -103,6 +144,8 @@ void ffGenerateWifiJsonConfig(FFWifiOptions* options, yyjson_mut_doc* doc, yyjso
     ffInitWifiOptions(&defaultOptions);
 
     ffJsonConfigGenerateModuleArgsConfig(doc, module, &defaultOptions.moduleArgs, &options->moduleArgs);
+
+    ffPercentGenerateJsonConfig(doc, module, defaultOptions.percent, options->percent);
 }
 
 void ffGenerateWifiJsonResult(FF_MAYBE_UNUSED FFWifiOptions* options, yyjson_mut_doc* doc, yyjson_mut_val* module)
@@ -112,11 +155,6 @@ void ffGenerateWifiJsonResult(FF_MAYBE_UNUSED FFWifiOptions* options, yyjson_mut
     if(error)
     {
         yyjson_mut_obj_add_str(doc, module, "error", error);
-        return;
-    }
-    if(!result.length)
-    {
-        yyjson_mut_obj_add_str(doc, module, "error", "No Wifi interfaces found");
         return;
     }
 
@@ -132,7 +170,7 @@ void ffGenerateWifiJsonResult(FF_MAYBE_UNUSED FFWifiOptions* options, yyjson_mut
         yyjson_mut_val* conn = yyjson_mut_obj_add_obj(doc, obj, "conn");
         yyjson_mut_obj_add_strbuf(doc, conn, "status", &wifi->conn.status);
         yyjson_mut_obj_add_strbuf(doc, conn, "ssid", &wifi->conn.ssid);
-        yyjson_mut_obj_add_strbuf(doc, conn, "bssid", &wifi->conn.macAddress);
+        yyjson_mut_obj_add_strbuf(doc, conn, "bssid", &wifi->conn.bssid);
         yyjson_mut_obj_add_strbuf(doc, conn, "protocol", &wifi->conn.protocol);
         yyjson_mut_obj_add_strbuf(doc, conn, "security", &wifi->conn.security);
         yyjson_mut_obj_add_real(doc, conn, "signalQuality", wifi->conn.signalQuality);
@@ -146,7 +184,7 @@ void ffGenerateWifiJsonResult(FF_MAYBE_UNUSED FFWifiOptions* options, yyjson_mut
         ffStrbufDestroy(&item->inf.status);
         ffStrbufDestroy(&item->conn.status);
         ffStrbufDestroy(&item->conn.ssid);
-        ffStrbufDestroy(&item->conn.macAddress);
+        ffStrbufDestroy(&item->conn.bssid);
         ffStrbufDestroy(&item->conn.protocol);
         ffStrbufDestroy(&item->conn.security);
     }
@@ -155,16 +193,17 @@ void ffGenerateWifiJsonResult(FF_MAYBE_UNUSED FFWifiOptions* options, yyjson_mut
 void ffPrintWifiHelpFormat(void)
 {
     FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_WIFI_MODULE_NAME, "{4} - {10}", FF_WIFI_NUM_FORMAT_ARGS, ((const char* []) {
-        "Interface description",
-        "Interface status",
-        "Connection status",
-        "Connection SSID",
-        "Connection BSSID",
-        "Connection protocol",
-        "Connection signal quality (percentage)",
-        "Connection RX rate",
-        "Connection TX rate",
-        "Connection Security algorithm"
+        "Interface description - inf-desc",
+        "Interface status - inf-status",
+        "Connection status - status",
+        "Connection SSID - ssid",
+        "Connection BSSID - bssid",
+        "Connection protocol - protocol",
+        "Connection signal quality (percentage num) - signal-quality",
+        "Connection RX rate - rx-rate",
+        "Connection TX rate - tx-rate",
+        "Connection Security algorithm - security",
+        "Connection signal quality (percentage bar) - signal-quality-bar",
     }));
 }
 
@@ -181,7 +220,9 @@ void ffInitWifiOptions(FFWifiOptions* options)
         ffPrintWifiHelpFormat,
         ffGenerateWifiJsonConfig
     );
-    ffOptionInitModuleArg(&options->moduleArgs);
+    ffOptionInitModuleArg(&options->moduleArgs, "");
+
+    options->percent = (FFColorRangeConfig) { 50, 20 };
 }
 
 void ffDestroyWifiOptions(FFWifiOptions* options)
