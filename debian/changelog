@@ -1,4 +1,4 @@
-fastfetch (2.23.0-0deepin) unstable; urgency=medium
+fastfetch (2.23.0-0deepin1) unstable; urgency=medium
 
   * New upstream version
   * Support unity version detection (DE, Linux)
