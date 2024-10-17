@@ -12,6 +12,7 @@ typedef struct FFOptionsModules
     FFBootmgrOptions bootmgr;
     FFBreakOptions break_;
     FFBrightnessOptions brightness;
+    FFBtrfsOptions btrfs;
     FFCPUOptions cpu;
     FFCPUCacheOptions cpuCache;
     FFCPUUsageOptions cpuUsage;
@@ -63,6 +64,7 @@ typedef struct FFOptionsModules
     FFTerminalThemeOptions terminalTheme;
     FFThemeOptions theme;
     FFTitleOptions title;
+    FFTPMOptions tpm;
     FFUptimeOptions uptime;
     FFUsersOptions users;
     FFVersionOptions version;

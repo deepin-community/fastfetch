@@ -1,3 +1,10 @@
+fastfetch (2.27.1+dfsg-1) unstable; urgency=medium
+
+  * New upstream version 2.27.1+dfsg
+  * Update copyright file with the latest changes
+
+ -- Hiago De Franco <hiagofranco@gmail.com>  Sat, 12 Oct 2024 16:40:05 -0300
+
 fastfetch (2.23.0-0deepin1) unstable; urgency=medium
 
   * New upstream version

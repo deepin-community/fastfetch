@@ -35,6 +35,7 @@ typedef struct FFPackagesResult
     uint32_t sorcery;
     uint32_t winget;
     uint32_t xbps;
+    uint32_t pacstall;
 
     uint32_t all; //Make sure this goes last
 
@@ -42,3 +43,5 @@ typedef struct FFPackagesResult
 } FFPackagesResult;
 
 const char* ffDetectPackages(FFPackagesResult* result, FFPackagesOptions* options);
+bool ffPackagesReadCache(FFstrbuf* cacheDir, FFstrbuf* cacheContent, const char* filePath, const char* packageId, uint32_t* result);
+bool ffPackagesWriteCache(FFstrbuf* cacheDir, FFstrbuf* cacheContent, uint32_t num_elements);

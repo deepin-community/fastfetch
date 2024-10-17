@@ -1,6 +1,27 @@
 #include "cpu.h"
 #include "common/sysctl.h"
-#include "detection/temps/temps_bsd.h"
+
+static const char* detectCpuTemp(double* current)
+{
+    int temp = ffSysctlGetInt("dev.cpu.0.temperature", -999999);
+    if (temp == -999999)
+        return "ffSysctlGetInt(\"dev.cpu.0.temperature\") failed";
+
+    // In tenth of degrees Kelvin
+    *current = (double) temp / 10 - 273.15;
+    return NULL;
+}
+
+static const char* detectThermalTemp(double* current)
+{
+    int temp = ffSysctlGetInt("hw.acpi.thermal.tz0.temperature", -999999);
+    if (temp == -999999)
+        return "ffSysctlGetInt(\"hw.acpi.thermal.tz0.temperature\") failed";
+
+    // In tenth of degrees Kelvin
+    *current = (double) temp / 10 - 273.15;
+    return NULL;
+}
 
 const char* ffDetectCPUImpl(const FFCPUOptions* options, FFCPUResult* cpu)
 {
@@ -9,7 +30,7 @@ const char* ffDetectCPUImpl(const FFCPUOptions* options, FFCPUResult* cpu)
 
     cpu->coresPhysical = (uint16_t) ffSysctlGetInt("hw.ncpu", 1);
     cpu->coresLogical = cpu->coresPhysical;
-    cpu->coresOnline = cpu->coresPhysical;
+    cpu->coresOnline = (uint16_t) ffSysctlGetInt("kern.smp.cpus", cpu->coresLogical);
 
     FF_STRBUF_AUTO_DESTROY buffer = ffStrbufCreate();
     if (ffSysctlGetString("kern.sched.topology_spec", &buffer) == NULL && buffer.length > 0)
@@ -41,40 +62,13 @@ const char* ffDetectCPUImpl(const FFCPUOptions* options, FFCPUResult* cpu)
 
     ffCPUDetectSpeedByCpuid(cpu);
 
-    for (uint16_t i = 0; i < cpu->coresLogical; ++i)
-    {
-        ffStrbufClear(&buffer);
-        char key[32];
-        snprintf(key, sizeof(key), "dev.cpu.%u.freq_levels", i);
-        if (ffSysctlGetString(key, &buffer) == NULL)
-        {
-            if (buffer.length == 0) continue;
-
-            // MHz/Watts pairs like: 2501/32000 2187/27125 2000/24000
-            uint32_t fmax = (uint32_t) strtoul(buffer.chars, NULL, 10);
-            if (cpu->frequencyMax < fmax) cpu->frequencyMax = fmax;
-
-            if (options->showPeCoreCount)
-            {
-                uint32_t ifreq = 0;
-                while (cpu->coreTypes[ifreq].freq != fmax && cpu->coreTypes[ifreq].freq > 0)
-                    ++ifreq;
-                if (cpu->coreTypes[ifreq].freq == 0)
-                    cpu->coreTypes[ifreq].freq = fmax;
-                cpu->coreTypes[ifreq].count++;
-            }
-        }
-        else
-            break;
-    }
-
     cpu->frequencyBase = (uint32_t) ffSysctlGetInt("hw.clockrate", 0);
     cpu->temperature = FF_CPU_TEMP_UNSET;
 
     if (options->temp)
     {
-        if (!ffDetectCpuTemp(&cpu->temperature))
-            ffDetectThermalTemp(&cpu->temperature);
+        if (detectCpuTemp(&cpu->temperature) != NULL)
+            detectThermalTemp(&cpu->temperature);
     }
 
     return NULL;

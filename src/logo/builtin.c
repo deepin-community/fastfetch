@@ -1666,6 +1666,14 @@ static const FFlogo F[] = {
         .colorKeys = FF_COLOR_FG_RED,
         .colorTitle = FF_COLOR_FG_WHITE,
     },
+    // FoxOS
+    {
+        .names = {"FoxOS"},
+        .lines = FASTFETCH_DATATEXT_LOGO_FOXOS,
+        .colors = {
+            FF_COLOR_FG_YELLOW,
+        },
+    },
     // FreeBSD
     {
         .names = {"Freebsd"},
@@ -1913,6 +1921,16 @@ static const FFlogo G[] = {
         },
         .colorKeys = FF_COLOR_FG_YELLOW,
         .colorTitle = FF_COLOR_FG_WHITE,
+    },
+    // GXDE
+    {
+        .names = {"GXDE"},
+        .lines = FASTFETCH_DATATEXT_LOGO_DEEPIN,
+        .colors = {
+            FF_COLOR_FG_RED,
+        },
+        .colorKeys = FF_COLOR_FG_RED,
+        .colorTitle = FF_COLOR_FG_RED,
     },
     // LAST
     {},
@@ -2295,6 +2313,16 @@ static const FFlogo K[] = {
 };
 
 static const FFlogo L[] = {
+    // LainOS
+    {
+        .names = {"LainOS"},
+        .lines = FASTFETCH_DATATEXT_LOGO_LAINOS,
+        .colors = {
+            FF_COLOR_FG_BLUE,
+            FF_COLOR_FG_256 "14",
+            FF_COLOR_FG_WHITE,
+        },
+    },
     // LangitKetujuh
     {
         .names = {"langitketujuh", "l7"},
@@ -2469,6 +2497,16 @@ static const FFlogo L[] = {
         .colorKeys = FF_COLOR_FG_YELLOW,
         .colorTitle = FF_COLOR_FG_WHITE,
     },
+    // LliureX
+    {
+        .names = {"LliureX"},
+        .lines = FASTFETCH_DATATEXT_LOGO_LLIUREX,
+        .colors = {
+            FF_COLOR_FG_BLUE,
+        },
+        .colorKeys = FF_COLOR_FG_WHITE,
+        .colorTitle = FF_COLOR_FG_BLUE,
+    },
     // LMDE
     {
         .names = {"LMDE"},
@@ -2479,16 +2517,6 @@ static const FFlogo L[] = {
         },
         .colorKeys = FF_COLOR_FG_GREEN,
         .colorTitle = FF_COLOR_FG_WHITE,
-    },
-    // LainOS
-    {
-        .names = {"LainOS"},
-        .lines = FASTFETCH_DATATEXT_LOGO_LAINOS,
-        .colors = {
-            FF_COLOR_FG_BLUE,
-            FF_COLOR_FG_256 "14",
-            FF_COLOR_FG_WHITE,
-        },
     },
     // Loc-OS
     {
@@ -3060,6 +3088,7 @@ static const FFlogo O[] = {
             FF_COLOR_FG_WHITE,
             FF_COLOR_FG_CYAN,
             FF_COLOR_FG_RED,
+            FF_COLOR_FG_LIGHT_BLACK,
         },
         .colorKeys = FF_COLOR_FG_YELLOW,
         .colorTitle = FF_COLOR_FG_WHITE,
@@ -4278,9 +4307,9 @@ static const FFlogo T[] = {
             FF_COLOR_FG_GREEN,
         },
     },
-    // TorizonCore
+    // Torizon OS
     {
-        .names = {"TorizonCore"},
+        .names = {"Torizon OS", "TorizonCore"},
         .lines = FASTFETCH_DATATEXT_LOGO_TORIZONCORE,
         .colors = {
             FF_COLOR_FG_LIGHT_WHITE,
@@ -4546,6 +4575,16 @@ static const FFlogo U[] = {
 };
 
 static const FFlogo V[] = {
+    // Valhalla
+    {
+        .names = {"Valhalla", "valhallaos", "valhalla-linux"},
+        .lines = FASTFETCH_DATATEXT_LOGO_VALHALLA,
+        .colors = {
+            FF_COLOR_FG_WHITE,
+        },
+        .colorKeys = FF_COLOR_FG_WHITE,
+        .colorTitle = FF_COLOR_FG_WHITE,
+    },
     // Vanilla
     {
         .names = {"vanilla", "vanilla-os", "vanilla-linux"},
@@ -4757,12 +4796,25 @@ static const FFlogo X[] = {
             FF_COLOR_FG_CYAN,
         },
     },
+    //XeroArch
+    {
+        .names = {"XeroArch"},
+        .lines = FASTFETCH_DATATEXT_LOGO_XEROARCH,
+        .colors = {
+            FF_COLOR_FG_256 "16",
+            FF_COLOR_FG_256 "14",
+            FF_COLOR_FG_256 "50",
+            FF_COLOR_FG_256 "93",
+            FF_COLOR_FG_256 "46",
+            FF_COLOR_FG_256 "15",
+        }
+    },
     //Xray_OS
     {
         .names = {"Xray_OS"},
         .lines = FASTFETCH_DATATEXT_LOGO_XRAY_OS,
         .colors = {
-            FF_COLOR_FG_256 "15",
+            FF_COLOR_FG_256 "16",
             FF_COLOR_FG_256 "14",
             FF_COLOR_FG_256 "16",
         }

@@ -17,7 +17,7 @@ const char* ffDetectAmdGpuInfo(const FFGpuDriverCondition* cond, FFGpuDriverResu
     if (!inited)
     {
         inited = true;
-        FF_LIBRARY_LOAD(libags, NULL, "dlopen amd_ags failed", soName , 1);
+        FF_LIBRARY_LOAD(libags, "dlopen amd_ags failed", soName , 1);
         FF_LIBRARY_LOAD_SYMBOL_MESSAGE(libags, agsInitialize)
 
         struct AGSContext* apiHandle;
@@ -64,6 +64,12 @@ const char* ffDetectAmdGpuInfo(const FFGpuDriverCondition* cond, FFGpuDriverResu
 
     if (result.type)
         *result.type = device->isAPU ? FF_GPU_TYPE_INTEGRATED : FF_GPU_TYPE_DISCRETE;
+
+    if (result.index)
+        *result.type = (uint32_t) device->adlAdapterIndex;
+
+    if (result.name)
+        ffStrbufSetS(result.name, device->adapterString);
 
     return NULL;
 }

@@ -58,18 +58,18 @@ static void x11DetectWMFromEWMH(X11PropertyData* data, Display* display, FFDispl
     data->ffXFree(wmWindow);
 }
 
-void ffdsConnectXlib(FFDisplayServerResult* result)
+const char* ffdsConnectXlib(FFDisplayServerResult* result)
 {
-    FF_LIBRARY_LOAD(x11, &instance.config.library.libX11, , "libX11" FF_LIBRARY_EXTENSION, 7, "libX11-xcb" FF_LIBRARY_EXTENSION, 2)
-    FF_LIBRARY_LOAD_SYMBOL(x11, XOpenDisplay,)
-    FF_LIBRARY_LOAD_SYMBOL(x11, XCloseDisplay,)
+    FF_LIBRARY_LOAD(x11, "dlopen libX11 failed", "libX11" FF_LIBRARY_EXTENSION, 7, "libX11-xcb" FF_LIBRARY_EXTENSION, 2)
+    FF_LIBRARY_LOAD_SYMBOL_MESSAGE(x11, XOpenDisplay)
+    FF_LIBRARY_LOAD_SYMBOL_MESSAGE(x11, XCloseDisplay)
 
     X11PropertyData propertyData;
     bool propertyDataInitialized = x11InitPropertyData(x11, &propertyData);
 
     Display* display = ffXOpenDisplay(x11);
     if(display == NULL)
-        return;
+        return "XOpenDisplay failed";
 
     if(propertyDataInitialized && ScreenCount(display) > 0)
         x11DetectWMFromEWMH(&propertyData, display, result);
@@ -98,14 +98,17 @@ void ffdsConnectXlib(FFDisplayServerResult* result)
     //If wayland hasn't set this, connection failed for it. So we are running only a X Server, not XWayland.
     if(result->wmProtocolName.length == 0)
         ffStrbufSetS(&result->wmProtocolName, FF_WM_PROTOCOL_X11);
+
+    return NULL;
 }
 
 #else
 
-void ffdsConnectXlib(FFDisplayServerResult* result)
+const char* ffdsConnectXlib(FFDisplayServerResult* result)
 {
     //Do nothing. WM / DE detection will use environment vars to detect as much as possible.
     FF_UNUSED(result);
+    return "Fastfetch was compiled without libX11 support";
 }
 
 #endif //FF_HAVE_X11
@@ -150,13 +153,13 @@ static double xrandrHandleMode(XrandrData* data, RRMode mode)
     return 0;
 }
 
-static bool xrandrHandleCrtc(XrandrData* data, RRCrtc crtc, FFstrbuf* name, bool primary, XRROutputInfo* output, FFDisplayType displayType)
+static bool xrandrHandleCrtc(XrandrData* data, XRROutputInfo* output, FFstrbuf* name, bool primary, FFDisplayType displayType, uint8_t* edidData, uint32_t edidLength)
 {
     //We do the check here, because we want the best fallback display if this call failed
     if(data->screenResources == NULL)
         return false;
 
-    XRRCrtcInfo* crtcInfo = data->ffXRRGetCrtcInfo(data->display, data->screenResources, crtc);
+    XRRCrtcInfo* crtcInfo = data->ffXRRGetCrtcInfo(data->display, data->screenResources, output->crtc);
     if(crtcInfo == NULL)
         return false;
 
@@ -177,7 +180,7 @@ static bool xrandrHandleCrtc(XrandrData* data, RRCrtc crtc, FFstrbuf* name, bool
             break;
     }
 
-    bool res = ffdsAppendDisplay(
+    FFDisplayResult* item = ffdsAppendDisplay(
         data->result,
         (uint32_t) crtcInfo->width,
         (uint32_t) crtcInfo->height,
@@ -193,8 +196,15 @@ static bool xrandrHandleCrtc(XrandrData* data, RRCrtc crtc, FFstrbuf* name, bool
         (uint32_t) output->mm_height
     );
 
+    if (edidLength)
+    {
+        item->hdrStatus = ffEdidGetHdrCompatible(edidData, edidLength) ? FF_DISPLAY_HDR_STATUS_SUPPORTED : FF_DISPLAY_HDR_STATUS_UNSUPPORTED;
+        ffEdidGetSerialAndManufactureDate(edidData, &item->serial, &item->manufactureYear, &item->manufactureWeek);
+        ffEdidGetPhysicalSize(edidData, &item->physicalWidth, &item->physicalHeight);
+    }
+
     data->ffXRRFreeCrtcInfo(crtcInfo);
-    return res;
+    return !!item;
 }
 
 static bool xrandrHandleOutput(XrandrData* data, RROutput output, FFstrbuf* name, bool primary, FFDisplayType displayType)
@@ -203,26 +213,30 @@ static bool xrandrHandleOutput(XrandrData* data, RROutput output, FFstrbuf* name
     if(outputInfo == NULL)
         return false;
 
+    uint8_t* edidData = NULL;
+    unsigned long edidLength = 0;
     Atom atomEdid = data->ffXInternAtom(data->display, "EDID", true);
     if (atomEdid != None)
     {
         int actual_format = 0;
-        unsigned long nitems = 0, bytes_after = 0;
+        unsigned long bytes_after = 0;
         Atom actual_type = None;
-        uint8_t* edidData = NULL;
-        if (data->ffXRRGetOutputProperty(data->display, output, atomEdid, 0, 100, false, false, AnyPropertyType, &actual_type, &actual_format, &nitems, &bytes_after, &edidData) == Success)
+        if (data->ffXRRGetOutputProperty(data->display, output, atomEdid, 0, 100, false, false, AnyPropertyType, &actual_type, &actual_format, &edidLength, &bytes_after, &edidData) == Success)
         {
-            if (nitems >= 128)
+            if (edidLength >= 128)
             {
                 ffStrbufClear(name);
                 ffEdidGetName(edidData, name);
             }
+            else
+                edidLength = 0;
         }
-        if (edidData)
-            data->ffXFree(edidData);
     }
-    bool res = xrandrHandleCrtc(data, outputInfo->crtc, name, primary, outputInfo, displayType);
 
+    bool res = xrandrHandleCrtc(data, outputInfo, name, primary, displayType, edidData, (uint32_t) edidLength);
+
+    if (edidData)
+        data->ffXFree(edidData);
     data->ffXRRFreeOutputInfo(outputInfo);
 
     return res;
@@ -308,34 +322,34 @@ static void xrandrHandleScreen(XrandrData* data, Screen* screen)
     );
 }
 
-void ffdsConnectXrandr(FFDisplayServerResult* result)
+const char* ffdsConnectXrandr(FFDisplayServerResult* result)
 {
-    FF_LIBRARY_LOAD(xrandr, &instance.config.library.libXrandr, , "libXrandr" FF_LIBRARY_EXTENSION, 3)
+    FF_LIBRARY_LOAD(xrandr, "dlopen libXrandr failed", "libXrandr" FF_LIBRARY_EXTENSION, 3)
 
-    FF_LIBRARY_LOAD_SYMBOL(xrandr, XOpenDisplay,)
-    FF_LIBRARY_LOAD_SYMBOL(xrandr, XCloseDisplay,)
+    FF_LIBRARY_LOAD_SYMBOL_MESSAGE(xrandr, XOpenDisplay)
+    FF_LIBRARY_LOAD_SYMBOL_MESSAGE(xrandr, XCloseDisplay)
 
     XrandrData data;
 
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xrandr, data, XInternAtom,);
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xrandr, data, XGetAtomName,);
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xrandr, data, XFree,);
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xrandr, data, XRRGetMonitors,);
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xrandr, data, XRRGetScreenResourcesCurrent,);
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xrandr, data, XRRGetOutputInfo,);
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xrandr, data, XRRGetOutputProperty,);
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xrandr, data, XRRGetCrtcInfo,);
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xrandr, data, XRRFreeCrtcInfo,);
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xrandr, data, XRRFreeOutputInfo,);
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xrandr, data, XRRFreeScreenResources,);
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xrandr, data, XRRFreeMonitors,);
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xrandr, data, XInternAtom);
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xrandr, data, XGetAtomName);
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xrandr, data, XFree);
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xrandr, data, XRRGetMonitors);
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xrandr, data, XRRGetScreenResourcesCurrent);
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xrandr, data, XRRGetOutputInfo);
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xrandr, data, XRRGetOutputProperty);
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xrandr, data, XRRGetCrtcInfo);
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xrandr, data, XRRFreeCrtcInfo);
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xrandr, data, XRRFreeOutputInfo);
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xrandr, data, XRRFreeScreenResources);
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xrandr, data, XRRFreeMonitors);
 
     X11PropertyData propertyData;
     bool propertyDataInitialized = x11InitPropertyData(xrandr, &propertyData);
 
     data.display = ffXOpenDisplay(NULL);
     if(data.display == NULL)
-        return;
+        return "XOpenDisplay() failed";
 
     if(propertyDataInitialized && ScreenCount(data.display) > 0)
         x11DetectWMFromEWMH(&propertyData, data.display, result);
@@ -350,14 +364,17 @@ void ffdsConnectXrandr(FFDisplayServerResult* result)
     //If wayland hasn't set this, connection failed for it. So we are running only a X Server, not XWayland.
     if(result->wmProtocolName.length == 0)
         ffStrbufSetS(&result->wmProtocolName, FF_WM_PROTOCOL_X11);
+
+    return NULL;
 }
 
 #else
 
-void ffdsConnectXrandr(FFDisplayServerResult* result)
+const char* ffdsConnectXrandr(FFDisplayServerResult* result)
 {
     //Do nothing here. There are more x11 implementations to come.
     FF_UNUSED(result);
+    return "Fastfetch was compiled without libXrandr support";
 }
 
 #endif // FF_HAVE_XRANDR

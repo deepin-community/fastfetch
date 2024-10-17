@@ -1,6 +1,7 @@
 #include "zpool.h"
 
 #ifdef FF_HAVE_LIBZFS
+#include "util/kmod.h"
 
 #ifdef __sun
 #define FF_DISABLE_DLOPEN
@@ -78,11 +79,15 @@ static int enumZpoolCallback(zpool_handle_t* zpool, void* param)
 
 const char* ffDetectZpool(FFlist* result /* list of FFZpoolResult */)
 {
-    FF_LIBRARY_LOAD(libzfs, NULL, "dlopen libzfs" FF_LIBRARY_EXTENSION " failed", "libzfs" FF_LIBRARY_EXTENSION, 4);
+    FF_LIBRARY_LOAD(libzfs, "dlopen libzfs" FF_LIBRARY_EXTENSION " failed", "libzfs" FF_LIBRARY_EXTENSION, 4);
     FF_LIBRARY_LOAD_SYMBOL_MESSAGE(libzfs, libzfs_init);
 
     libzfs_handle_t* handle = fflibzfs_init();
-    if (!handle) return "libzfs_init() failed";
+    if (!handle)
+    {
+        if (!ffKmodLoaded("zfs")) return "`zfs` kernel module is not loaded";
+        return "libzfs_init() failed";
+    }
 
     __attribute__((__cleanup__(cleanLibzfs))) FFZfsData data = {
         .handle = handle,

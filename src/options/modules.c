@@ -11,6 +11,7 @@ void ffOptionsInitModules(FFOptionsModules* options)
     ffInitBootmgrOptions(&options->bootmgr);
     ffInitBreakOptions(&options->break_);
     ffInitBrightnessOptions(&options->brightness);
+    ffInitBtrfsOptions(&options->btrfs);
     ffInitCameraOptions(&options->camera);
     ffInitCPUOptions(&options->cpu);
     ffInitCPUUsageOptions(&options->cpuUsage);
@@ -62,6 +63,7 @@ void ffOptionsInitModules(FFOptionsModules* options)
     ffInitTerminalThemeOptions(&options->terminalTheme);
     ffInitThemeOptions(&options->theme);
     ffInitTitleOptions(&options->title);
+    ffInitTPMOptions(&options->tpm);
     ffInitUptimeOptions(&options->uptime);
     ffInitUsersOptions(&options->users);
     ffInitVersionOptions(&options->version);
@@ -84,6 +86,7 @@ void ffOptionsDestroyModules(FFOptionsModules* options)
     ffDestroyBootmgrOptions(&options->bootmgr);
     ffDestroyBreakOptions(&options->break_);
     ffDestroyBrightnessOptions(&options->brightness);
+    ffDestroyBtrfsOptions(&options->btrfs);
     ffDestroyCameraOptions(&options->camera);
     ffDestroyCPUOptions(&options->cpu);
     ffDestroyCPUCacheOptions(&options->cpuCache);
@@ -135,6 +138,7 @@ void ffOptionsDestroyModules(FFOptionsModules* options)
     ffDestroyTerminalThemeOptions(&options->terminalTheme);
     ffDestroyThemeOptions(&options->theme);
     ffDestroyTitleOptions(&options->title);
+    ffDestroyTPMOptions(&options->tpm);
     ffDestroyUptimeOptions(&options->uptime);
     ffDestroyUsersOptions(&options->users);
     ffDestroyVersionOptions(&options->version);

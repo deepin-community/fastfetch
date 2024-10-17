@@ -128,7 +128,7 @@
             "desc": "Set the timeout (ms) when waiting for child processes",
             "arg": {
                 "type": "num",
-                "default": 1000
+                "default": 5000
             }
         },
         {
@@ -766,184 +766,6 @@
             }
         }
     ],
-    "Library path": [
-        {
-            "long": "lib-vulkan",
-            "desc": "Vulkan module & fallback for GPU output",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-wayland",
-            "desc": "Better display performance and output in wayland sessions",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-xcb-randr",
-            "desc": "X11 sessions for better display detection and faster WM detection",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-xcb",
-            "desc": "X11 sessions for better display detection and faster WM detection",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-xrandr",
-            "desc": "X11 sessions for better display detection and faster WM detection",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-x11",
-            "desc": "X11 sessions for better display detection and faster WM detection",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-drm",
-            "desc": "Used for fast resolution and refresh rate detection",
-            "remark": "Linux only",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-gio",
-            "desc": "Needed for values that are only stored GSettings",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-dconf",
-            "desc": "Needed for values that are only stored in DConf + Fallback for GSettings",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-dbus",
-            "desc": "Bluetooth, Player & Media detection",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-xfconf",
-            "desc": "Needed for XFWM theme and XFCE Terminal font",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-sqlite3",
-            "desc": "Needed for pkg & rpm package count",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-rpm",
-            "desc": "Slower fallback for rpm package count",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-imagemagick",
-            "desc": "Images in terminal using sixel or kitty graphics protocol",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-z",
-            "desc": "Libz. Faster image output when using kitty graphics protocol",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-chafa",
-            "desc": "Image output as ascii art",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-egl",
-            "desc": "Needed by the OpenGL module for gl context creation",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-glx",
-            "desc": "Needed by the OpenGL module for gl context creation",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-osmesa",
-            "desc": "Needed by the OpenGL module for gl context creation",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-opencl",
-            "desc": "OpenCL module",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-pulse",
-            "desc": "Pulseaudio. Used for Sound detection",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-nm",
-            "desc": "NetworkManager. Used for Wifi detection",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-freetype",
-            "desc": "Used for Termux font detection",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-ddcutil",
-            "desc": "Used for brightness detection of external displays",
-            "arg": {
-                "type": "path"
-            }
-        },
-        {
-            "long": "lib-elf",
-            "desc": "Used for st terminal font detection and systemd version detection",
-            "arg": {
-                "type": "path"
-            }
-        }
-    ],
     "Module specific": [
         {
             "long": "title-fqdn",
@@ -1179,6 +1001,14 @@
             }
         },
         {
+            "long": "brightness-compact",
+            "desc": "Set if multiple results should be printed in one line",
+            "arg": {
+                "type": "bool",
+                "default": false
+            }
+        },
+        {
             "long": "sound-type",
             "desc": "Set what type of sound devices should be printed",
             "arg": {
@@ -1367,6 +1197,24 @@
             }
         },
         {
+            "long": "localip-show-mtu",
+            "desc": "Show net interface's MTU (Maximum Transmission Unit) size in bytes",
+            "arg": {
+                "type": "bool",
+                "optional": true,
+                "default": false
+            }
+        },
+        {
+            "long": "localip-show-speed",
+            "desc": "Show net interface's link speed with human-readable format (or an 1Mb units integer in JSON format)",
+            "arg": {
+                "type": "bool",
+                "optional": true,
+                "default": false
+            }
+        },
+        {
             "long": "localip-show-prefix-len",
             "desc": "Show network prefix length (/N) in local ip module",
             "arg": {
@@ -1395,6 +1243,15 @@
         {
             "long": "localip-show-all-ips",
             "desc": "Show all IPs bound to the same interface. By default only the first IP is shown",
+            "arg": {
+                "type": "bool",
+                "optional": true,
+                "default": false
+            }
+        },
+        {
+            "long": "localip-show-flags",
+            "desc": "Show net interface flags in local ip module",
             "arg": {
                 "type": "bool",
                 "optional": true,
@@ -1552,6 +1409,15 @@
             "arg": {
                 "type": "str",
                 "default": "\"cmd\" for Windows; \"/bin/sh\" for *nix"
+            }
+        },
+        {
+            "long": "command-param",
+            "desc": "Set the parameter used when starting the shell",
+            "remark": "If set to empty string, it will be ignored",
+            "arg": {
+                "type": "str",
+                "default": "\"/c\" for Windows; \"-c\" for *nix"
             }
         },
         {

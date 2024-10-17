@@ -82,21 +82,21 @@ static void xcbDetectWMfromEWMH(XcbPropertyData* data, xcb_connection_t* connect
     ffStrbufSetS(&result->wmProcessName, wmName);
 }
 
-void ffdsConnectXcb(FFDisplayServerResult* result)
+const char* ffdsConnectXcb(FFDisplayServerResult* result)
 {
-    FF_LIBRARY_LOAD(xcb, &instance.config.library.libXcb, , "libxcb" FF_LIBRARY_EXTENSION, 2)
-    FF_LIBRARY_LOAD_SYMBOL(xcb, xcb_connect,)
-    FF_LIBRARY_LOAD_SYMBOL(xcb, xcb_get_setup,)
-    FF_LIBRARY_LOAD_SYMBOL(xcb, xcb_setup_roots_iterator,)
-    FF_LIBRARY_LOAD_SYMBOL(xcb, xcb_screen_next,)
-    FF_LIBRARY_LOAD_SYMBOL(xcb, xcb_disconnect,)
+    FF_LIBRARY_LOAD(xcb, "dlopen lbxcb failed", "libxcb" FF_LIBRARY_EXTENSION, 2)
+    FF_LIBRARY_LOAD_SYMBOL_MESSAGE(xcb, xcb_connect)
+    FF_LIBRARY_LOAD_SYMBOL_MESSAGE(xcb, xcb_get_setup)
+    FF_LIBRARY_LOAD_SYMBOL_MESSAGE(xcb, xcb_setup_roots_iterator)
+    FF_LIBRARY_LOAD_SYMBOL_MESSAGE(xcb, xcb_screen_next)
+    FF_LIBRARY_LOAD_SYMBOL_MESSAGE(xcb, xcb_disconnect)
 
     XcbPropertyData propertyData;
     bool propertyDataInitialized = xcbInitPropertyData(xcb, &propertyData);
 
     xcb_connection_t* connection = ffxcb_connect(NULL, NULL);
     if(connection == NULL)
-        return;
+        return "xcb_connect failed";
 
     xcb_screen_iterator_t iterator = ffxcb_setup_roots_iterator(ffxcb_get_setup(connection));
 
@@ -128,14 +128,17 @@ void ffdsConnectXcb(FFDisplayServerResult* result)
     //If wayland hasn't set this, connection failed for it. So we are running only a X Server, not XWayland.
     if(result->wmProtocolName.length == 0)
         ffStrbufSetS(&result->wmProtocolName, FF_WM_PROTOCOL_X11);
+
+    return NULL;
 }
 
 #else
 
-void ffdsConnectXcb(FFDisplayServerResult* result)
+const char* ffdsConnectXcb(FFDisplayServerResult* result)
 {
     //Do nothing. There are other implementations coming
     FF_UNUSED(result)
+    return "Fastfetch was compiled without XCB support";
 }
 
 #endif
@@ -177,47 +180,29 @@ typedef struct XcbRandrData
     xcb_randr_get_screen_resources_current_reply_t* screenResources;
 } XcbRandrData;
 
-static bool xcbRandrHandleModeInfo(XcbRandrData* data, xcb_randr_mode_info_t* modeInfo, FFstrbuf* name, uint32_t rotation, bool primary, xcb_randr_get_output_info_reply_t* output, FFDisplayType displayType)
-{
-    double refreshRate = (double) modeInfo->dot_clock / (double) (modeInfo->htotal * modeInfo->vtotal);
-
-    return ffdsAppendDisplay(
-        data->result,
-        (uint32_t) modeInfo->width,
-        (uint32_t) modeInfo->height,
-        refreshRate,
-        (uint32_t) modeInfo->width,
-        (uint32_t) modeInfo->height,
-        rotation,
-        name,
-        displayType,
-        primary,
-        0,
-        (uint32_t) output->mm_width,
-        (uint32_t) output->mm_height
-    );
-}
-
-static bool xcbRandrHandleMode(XcbRandrData* data, xcb_randr_mode_t mode, FFstrbuf* name, uint32_t rotation, bool primary, xcb_randr_get_output_info_reply_t* output, FFDisplayType displayType)
+static double xcbRandrHandleMode(XcbRandrData* data, xcb_randr_mode_t mode)
 {
     //We do the check here, because we want the best fallback display if this call failed
     if(data->screenResources == NULL)
-        return false;
+        return 0;
 
     xcb_randr_mode_info_iterator_t modesIterator = data->ffxcb_randr_get_screen_resources_current_modes_iterator(data->screenResources);
 
     while(modesIterator.rem > 0)
     {
         if(modesIterator.data->id == mode)
-            return xcbRandrHandleModeInfo(data, modesIterator.data, name, rotation, primary, output, displayType);
+        {
+            xcb_randr_mode_info_t* modeInfo = modesIterator.data;
+            return (double) modeInfo->dot_clock / (double) (modeInfo->htotal * modeInfo->vtotal);
+        }
 
         data->ffxcb_randr_mode_info_next(&modesIterator);
     }
 
-    return false;
+    return 0;
 }
 
-static bool xcbRandrHandleCrtc(XcbRandrData* data, xcb_randr_crtc_t crtc, FFstrbuf* name, bool primary, xcb_randr_get_output_info_reply_t* output, FFDisplayType displayType)
+static bool xcbRandrHandleCrtc(XcbRandrData* data, xcb_randr_crtc_t crtc, FFstrbuf* name, bool primary, xcb_randr_get_output_info_reply_t* output, FFDisplayType displayType, uint8_t* edidData, uint32_t edidLength)
 {
     xcb_randr_get_crtc_info_cookie_t crtcInfoCookie = data->ffxcb_randr_get_crtc_info(data->connection, crtc, XCB_CURRENT_TIME);
     FF_AUTO_FREE xcb_randr_get_crtc_info_reply_t* crtcInfoReply = data->ffxcb_randr_get_crtc_info_reply(data->connection, crtcInfoCookie, NULL);
@@ -240,12 +225,12 @@ static bool xcbRandrHandleCrtc(XcbRandrData* data, xcb_randr_crtc_t crtc, FFstrb
             rotation = 0;
             break;
     }
-    bool res = xcbRandrHandleMode(data, crtcInfoReply->mode, name, rotation, primary, output, displayType);
-    res = res ? true : !!ffdsAppendDisplay(
+
+    FFDisplayResult* item = ffdsAppendDisplay(
         data->result,
         (uint32_t) crtcInfoReply->width,
         (uint32_t) crtcInfoReply->height,
-        0,
+        xcbRandrHandleMode(data, crtcInfoReply->mode),
         (uint32_t) crtcInfoReply->width,
         (uint32_t) crtcInfoReply->height,
         rotation,
@@ -256,8 +241,14 @@ static bool xcbRandrHandleCrtc(XcbRandrData* data, xcb_randr_crtc_t crtc, FFstrb
         (uint32_t) output->mm_width,
         (uint32_t) output->mm_height
     );
+    if (item && edidLength)
+    {
+        item->hdrStatus = ffEdidGetHdrCompatible(edidData, (uint32_t) edidLength) ? FF_DISPLAY_HDR_STATUS_SUPPORTED : FF_DISPLAY_HDR_STATUS_UNSUPPORTED;
+        ffEdidGetSerialAndManufactureDate(edidData, &item->serial, &item->manufactureYear, &item->manufactureWeek);
+        ffEdidGetPhysicalSize(edidData, &item->physicalWidth, &item->physicalHeight);
+    }
 
-    return res;
+    return !!item;
 }
 
 static bool xcbRandrHandleOutput(XcbRandrData* data, xcb_randr_output_t output, FFstrbuf* name, bool primary, FFDisplayType displayType)
@@ -269,21 +260,27 @@ static bool xcbRandrHandleOutput(XcbRandrData* data, xcb_randr_output_t output, 
 
     xcb_intern_atom_cookie_t requestAtomCookie = data->ffxcb_intern_atom(data->connection, true, (uint16_t) strlen("EDID"), "EDID");
     FF_AUTO_FREE xcb_intern_atom_reply_t* requestAtomReply = data->ffxcb_intern_atom_reply(data->connection, requestAtomCookie, NULL);
+    FF_AUTO_FREE xcb_randr_get_output_property_reply_t* outputPropertyReply = NULL;
+    uint8_t* edidData = NULL;
+    uint32_t edidLength = 0;
     if(requestAtomReply)
     {
         xcb_randr_get_output_property_cookie_t outputPropertyCookie = data->ffxcb_randr_get_output_property(data->connection, output, requestAtomReply->atom, XCB_GET_PROPERTY_TYPE_ANY, 0, 100, false, false);
-        FF_AUTO_FREE xcb_randr_get_output_property_reply_t* outputPropertyReply = data->ffxcb_randr_get_output_property_reply(data->connection, outputPropertyCookie, NULL);
+        outputPropertyReply = data->ffxcb_randr_get_output_property_reply(data->connection, outputPropertyCookie, NULL);
         if(outputPropertyReply)
         {
-            if(data->ffxcb_randr_get_output_property_data_length(outputPropertyReply) >= 128)
+            int len = data->ffxcb_randr_get_output_property_data_length(outputPropertyReply);
+            if(len >= 128)
             {
                 ffStrbufClear(name);
-                ffEdidGetName(data->ffxcb_randr_get_output_property_data(outputPropertyReply), name);
+                edidData = data->ffxcb_randr_get_output_property_data(outputPropertyReply);
+                ffEdidGetName(edidData, name);
+                edidLength = (uint32_t) len;
             }
         }
     }
 
-    bool res = xcbRandrHandleCrtc(data, outputInfoReply->crtc, name, primary, outputInfoReply, displayType);
+    bool res = xcbRandrHandleCrtc(data, outputInfoReply->crtc, name, primary, outputInfoReply, displayType, edidData, edidLength);
 
     return res;
 }
@@ -388,45 +385,45 @@ static void xcbRandrHandleScreen(XcbRandrData* data, xcb_screen_t* screen)
     );
 }
 
-void ffdsConnectXcbRandr(FFDisplayServerResult* result)
+const char* ffdsConnectXcbRandr(FFDisplayServerResult* result)
 {
-    FF_LIBRARY_LOAD(xcbRandr, &instance.config.library.libXcbRandr, , "libxcb-randr" FF_LIBRARY_EXTENSION, 1)
-    FF_LIBRARY_LOAD_SYMBOL(xcbRandr, xcb_connect,)
-    FF_LIBRARY_LOAD_SYMBOL(xcbRandr, xcb_get_setup,)
-    FF_LIBRARY_LOAD_SYMBOL(xcbRandr, xcb_setup_roots_iterator,)
-    FF_LIBRARY_LOAD_SYMBOL(xcbRandr, xcb_screen_next,)
-    FF_LIBRARY_LOAD_SYMBOL(xcbRandr, xcb_disconnect,)
+    FF_LIBRARY_LOAD(xcbRandr, "dlopen lbxcb-randr failed", "libxcb-randr" FF_LIBRARY_EXTENSION, 1)
+    FF_LIBRARY_LOAD_SYMBOL_MESSAGE(xcbRandr, xcb_connect)
+    FF_LIBRARY_LOAD_SYMBOL_MESSAGE(xcbRandr, xcb_get_setup)
+    FF_LIBRARY_LOAD_SYMBOL_MESSAGE(xcbRandr, xcb_setup_roots_iterator)
+    FF_LIBRARY_LOAD_SYMBOL_MESSAGE(xcbRandr, xcb_screen_next)
+    FF_LIBRARY_LOAD_SYMBOL_MESSAGE(xcbRandr, xcb_disconnect)
 
     XcbRandrData data;
 
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_intern_atom,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_intern_atom_reply,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_randr_get_screen_resources_current,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_randr_get_screen_resources_current_reply,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_randr_get_screen_resources_current_modes_iterator,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_randr_mode_info_next,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_randr_get_monitors,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_randr_get_monitors_reply,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_randr_get_monitors_monitors_iterator,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_randr_monitor_info_next,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_randr_monitor_info_outputs_length,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_randr_monitor_info_outputs,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_randr_output_next,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_randr_get_output_info,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_randr_get_output_info_reply,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_randr_get_output_property,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_randr_get_output_property_reply,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_randr_get_output_property_data,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_randr_get_output_property_data_length,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_randr_get_crtc_info,)
-    FF_LIBRARY_LOAD_SYMBOL_VAR(xcbRandr, data, xcb_randr_get_crtc_info_reply,)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_intern_atom)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_intern_atom_reply)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_randr_get_screen_resources_current)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_randr_get_screen_resources_current_reply)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_randr_get_screen_resources_current_modes_iterator)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_randr_mode_info_next)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_randr_get_monitors)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_randr_get_monitors_reply)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_randr_get_monitors_monitors_iterator)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_randr_monitor_info_next)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_randr_monitor_info_outputs_length)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_randr_monitor_info_outputs)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_randr_output_next)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_randr_get_output_info)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_randr_get_output_info_reply)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_randr_get_output_property)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_randr_get_output_property_reply)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_randr_get_output_property_data)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_randr_get_output_property_data_length)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_randr_get_crtc_info)
+    FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(xcbRandr, data, xcb_randr_get_crtc_info_reply)
 
     bool propertyDataInitialized = xcbInitPropertyData(xcbRandr, &data.propData);
 
 
     data.connection = ffxcb_connect(NULL, NULL);
     if(data.connection == NULL)
-        return;
+        return "xcb_connect failed";
 
 
     data.result = result;
@@ -450,14 +447,17 @@ void ffdsConnectXcbRandr(FFDisplayServerResult* result)
     //If wayland hasn't set this, connection failed for it. So we are running only a X Server, not XWayland.
     if(result->wmProtocolName.length == 0)
         ffStrbufSetS(&result->wmProtocolName, FF_WM_PROTOCOL_X11);
+
+    return NULL;
 }
 
 #else
 
-void ffdsConnectXcbRandr(FFDisplayServerResult* result)
+const char* ffdsConnectXcbRandr(FFDisplayServerResult* result)
 {
     //Do nothing. There are other implementations coming
     FF_UNUSED(result)
+    return "Fastfetch was compiled without libxcb-randr support";
 }
 
 #endif

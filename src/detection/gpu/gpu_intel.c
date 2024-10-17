@@ -34,7 +34,7 @@ const char* ffDetectIntelGpuInfo(const FFGpuDriverCondition* cond, FFGpuDriverRe
     if (!igclData.inited)
     {
         igclData.inited = true;
-        FF_LIBRARY_LOAD(libigcl, NULL, "dlopen igcl (ControlLib) failed", soName , 1);
+        FF_LIBRARY_LOAD(libigcl, "dlopen igcl (ControlLib) failed", soName , 1);
         FF_LIBRARY_LOAD_SYMBOL_MESSAGE(libigcl, ctlInit)
         FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(libigcl, igclData, ctlClose)
         FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(libigcl, igclData, ctlEnumerateDevices)
@@ -194,6 +194,9 @@ const char* ffDetectIntelGpuInfo(const FFGpuDriverCondition* cond, FFGpuDriverRe
             *result.frequency = (uint32_t) (maxValue + 0.5);
         }
     }
+
+    if (result.name)
+        ffStrbufSetS(result.name, properties.name);
 
     return NULL;
 }

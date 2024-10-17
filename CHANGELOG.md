@@ -1,3 +1,131 @@
+# 2.27.1
+
+Bugfixes:
+* Fix invalid display name detection on GNOME, wayland (Display, Linux)
+
+# 2.27.0
+
+Changes:
+* We now print `"` instead of `″` when displaying diagonal length in inches, so that the character can be correctly displayed in Linux console (Display)
+* All detection code of `monitor` module is merged into `display` module. Now `monitor` just prints the same information as `display` with different format. Notably:
+    * The resolution reported by `monitor` module is now current resolution instead of native / maximum resolution. PPI is calcuated based on current resolution too.
+    * The refresh rate reported by `monitor` module is the current refresh rate.
+
+Features:
+* Add basic, highly experimental support of OpenBSD (OpenBSD)
+* Improve support for Raspberry pi (CPU / GPU, Linux)
+* Detect SOC name, instead of displaying components used in the SOC, if available (CPU, Linux)
+* Add option `--brightness-compact` to display multiple brightness values in one line (Brightness)
+* Add `day-pretty` (#1305, DateTime)
+* Support network interface adapter flag detection (#1315, LocalIP)
+    * Enable it with `--localip-show-flags`
+
+Bugfixes:
+* Remove trailing newline in GPU name for Raspberry pi (#1303, GPU, Linux)
+* Fix a possible buffer overflow (GPU, Linux)
+* Fix CPU temp incorrectly reported as 0 celsius (#1308, CPU, Linux)
+* Corrently report `TPM device is not found` error (#1314, TPM, Windows)
+* Fix errors when triggering shell completion with python3 uninstalled (#1310)
+    * To package managers: as shell completion scripts of fastfetch use python3, it should be added as an optional dependency of fastfetch
+* Fix possible crashes when detecting term font of kitty (#1321, TerminalFont, Linux)
+
+Logos:
+* Add XeroArch
+* Add ValhallaOS
+
+# 2.26.1
+
+Features:
+* Allow to disable pacstall packager detection in CMake
+
+Bugfixes:
+* Fix uninitialized variables (GPU, Windows)
+
+# 2.26.0
+
+Changes:
+* To be consistent to other platforms, CPU frequency detection on Linux no longer checks `bios_limit`
+
+Features:
+* Detect GPU index (#1267, GPU)
+* Count Flatpak runtime packages (#1085, Packages, Linux)
+* Support pacstall package manager (Packages, Linux)
+* Support CU core count, max frequency, VMEM usage detection for AMD cards on Linux (GPU, Linux)
+    * Requires `--gpu-driver-specific`
+* Support EU core count, VMEM size detection Intel cards on Linux (GPU, Linux)
+    * Requires `--gpu-driver-specific`. VMEM usage detection requires root permissions.
+* Add new module `TPM` to print TPM (Trusted Platform Module) version if available (TPM)
+* Support GPU driver version detection (GPU, macOS)
+* Add new CMake option `-DENABLE_EMBEDDED_PCIIDS=ON`.
+    * If enabled, fastfetch will download the newest [`pci.ids`](https://pci-ids.ucw.cz/) file, [transform it into C code](https://github.com/fastfetch-cli/fastfetch/blob/dev/scripts/gen-pciids.py) and compile it into fastfetch binaries.
+
+Bugfixes:
+* Fix font size detecton of foot terminal (#1276, TerminalFont, Linux)
+* Ignore `su` and `sudo` when detecting terminal (#1283, Terminal, Linux)
+* Always print inches in integer (Display)
+* Fix Wifi connection protocol detection on macOS Sequoia (Wifi, macOS)
+* Fix hanging when font name is long when detecting kitty term font (#1289, TerminalFont)
+* Detect all enabled or connected connectors (#1301, Display, Linux)
+
+Logos:
+* Add FoxOS
+* Add GXDE OS
+
+# 2.25.0
+
+Features:
+* Moore Threads GPU add support to query number of cores (#1259, GPU)
+* Cache detection result based on last modification time (Packages)
+* Add cmake options to disable certain package managers at compile time
+    * Package managers are encouraged to disable some package managers by passing `-DPACKAGES_DISABLE_` when running `cmake`. For example, when building for Arch Linux, `-DPACKAGES_DISABLE_APK=ON -DPACKAGES_DISABLE_DPKG=ON -DPACKAGES_DISABLE_RPM=ON ...` should be specified.
+    * See all available options by [running `cmake -L | grep PACKAGES_DISABLE_`](https://github.com/fastfetch-cli/fastfetch/blob/dev/CMakeLists.txt#L91)
+    * This option does NOT remove the detection code. It just disables the detection at runtime. One can still use `--packages-disabled ""` to enable all package managers.
+* Add new option `--show-localip-{speed,mtu}` (LocalIP)
+* Add new module `Btrfs`, which prints all mounted Btrfs volumes, like `Zpool` module (#1262, Linux)
+* Improve Wifi module support for macOS Sequoia (Wifi, macOS)
+    * Currently it uses `system_profiler` which costs about 2 seconds on my MBP. I suggest disabling it for now until a better solution is found.
+
+Bugfixes:
+* Fix invalid CPU temperature detection on FreeBSD (#1260, CPU, FreeBSD)
+* Remove `showPeCoreCount` support on FreeBSD (#1260, CPU, FreeBSD)
+* Don't use Wifi speed as Ethernet speed (LocalIP, FreeBSD)
+* Fix compiling with old linux headers (Camera, Linux)
+* Fix detecting public ipv6 address (PublicIP, Windows)
+
+Logo:
+* Fix parrot logo detection
+* Rename TorizonCore to Torizon OS
+
+# 2.24.0
+
+Changes:
+* Support of `--lib-XXX` is removed
+    * If fastfetch fails to load some `.so` `.dylib` libraries, `LD_LIBRARY_PATH` should be used.
+
+Features:
+* Support sixel image protocol on Windows (Logo, Windows)
+    * Requires imagemagick7 to be installed. MSYS2 is recommended.
+* Improve terminal query on Windows (Windows)
+    * TerminalSize, TerminalTheme
+* Detect more ARM microarchitectures and SOC names (CPU, Linux)
+* Detect the number of online cores (CPU, FreeBSD)
+* Support board name detection for Asahi Linux (Board, Linux)
+* Add new option `--command-param` to customize the parameters when running shell
+* Support syntax of sub string in `--<module>-format`: `{variable~startIndex,endIndex}`
+    * See `fastfetch -h format` for detail
+
+Bugfixes:
+* Fix tests building when system yyjson is used (#1244)
+* Fix dinit detection; support dinit version detection (#1245, InitSystem, Linux)
+* Fix signal quality, refresh rate and maybe others in custom format (#1241)
+* Fix boot time calculation (#1249, Uptime, Linux)
+* Fix custom format for boolean values
+    * `{?false-value}This should not print{?}{?true-value}This should print{?}` will print `This should print`
+* Fix possible hanging when running fastfetch in screen 5.0 (TerminalTheme, macOS)
+
+Logos:
+* Add Lliurex
+
 # 2.23.0
 
 Features:

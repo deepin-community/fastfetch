@@ -21,7 +21,6 @@ typedef struct FFCPUResult
 
     uint32_t frequencyBase; // GHz
     uint32_t frequencyMax; // GHz
-    uint32_t frequencyBiosLimit; // GHz
 
     FFCPUCore coreTypes[16]; // number of P cores, E cores, etc.
 
@@ -30,7 +29,7 @@ typedef struct FFCPUResult
 
 const char* ffDetectCPU(const FFCPUOptions* options, FFCPUResult* cpu);
 const char* ffCPUAppleCodeToName(uint32_t code);
-
+const char* ffCPUQualcommCodeToName(uint32_t code);
 
 #if defined(__x86_64__) || defined(__i386__)
 

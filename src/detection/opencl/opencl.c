@@ -75,6 +75,7 @@ static const char* openCLHandleData(OpenCLData* data, FFOpenCLResult* result)
             ffStrbufInit(&gpu->vendor);
             ffStrbufInit(&gpu->driver);
             ffStrbufInit(&gpu->platformApi);
+            gpu->index = FF_GPU_INDEX_UNSET;
             gpu->temperature = FF_GPU_TEMP_UNSET;
             gpu->coreCount = FF_GPU_CORE_COUNT_UNSET;
             gpu->type = FF_GPU_TYPE_UNKNOWN;
@@ -148,7 +149,7 @@ static const char* detectOpenCL(FFOpenCLResult* result)
 
     #ifndef __APPLE__
 
-    FF_LIBRARY_LOAD(opencl, &instance.config.library.libOpenCL, "dlopen libOpenCL" FF_LIBRARY_EXTENSION" failed",
+    FF_LIBRARY_LOAD(opencl, "dlopen libOpenCL" FF_LIBRARY_EXTENSION" failed",
     #ifdef _WIN32
         "OpenCL"FF_LIBRARY_EXTENSION, -1,
     #endif

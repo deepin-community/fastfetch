@@ -8,6 +8,8 @@
 #include <ctype.h>
 #ifdef __FreeBSD__
     #include <paths.h>
+#elif __OpenBSD__
+    #define _PATH_LOCALBASE "/usr/local"
 #endif
 
 #ifdef _WIN32
@@ -119,6 +121,19 @@ static bool getShellVersionPwsh(FFstrbuf* exe, FFstrbuf* version)
 
 static bool getShellVersionKsh(FFstrbuf* exe, FFstrbuf* version)
 {
+#if __OpenBSD__
+    if(ffProcessAppendStdOut(version, (char* const[]) {
+        exe->chars,
+        "-c",
+        "echo $KSH_VERSION",
+        NULL
+    }) != NULL)
+        return false;
+
+    // @(#)PD KSH v5.2.14 99/07/13.2
+    ffStrbufSubstrAfterFirstC(version, 'v');
+    ffStrbufSubstrBeforeFirstC(version, ' ');
+#else
     if(ffProcessAppendStdErr(version, (char* const[]) {
         exe->chars,
         "--version",
@@ -129,6 +144,7 @@ static bool getShellVersionKsh(FFstrbuf* exe, FFstrbuf* version)
     //  version         sh (AT&T Research) 93u+ 2012-08-01
     ffStrbufSubstrAfterLastC(version, ')');
     ffStrbufTrim(version, ' ');
+#endif
     return true;
 }
 
@@ -365,6 +381,13 @@ FF_MAYBE_UNUSED static bool getTerminalVersionKonsole(FFstrbuf* exe, FFstrbuf* v
 
 FF_MAYBE_UNUSED static bool getTerminalVersionFoot(FFstrbuf* exe, FFstrbuf* version)
 {
+    uint32_t major = 0, minor = 0, patch = 0;
+    if (ffGetTerminalResponse("\e[>c", 3, "\e[>1;%2u%2u%2u;0c", &major, &minor, &patch) == NULL)
+    {
+        ffStrbufSetF(version, "%u.%u.%u", major, minor, patch);
+        return true;
+    }
+
     if(!getExeVersionRaw(exe, version)) return false;
 
     //foot version: 1.13.1 -pgo +ime -graphemes -assertions
@@ -375,6 +398,9 @@ FF_MAYBE_UNUSED static bool getTerminalVersionFoot(FFstrbuf* exe, FFstrbuf* vers
 
 FF_MAYBE_UNUSED static bool getTerminalVersionMateTerminal(FFstrbuf* exe, FFstrbuf* version)
 {
+    ffBinaryExtractStrings(exe->chars, extractGeneralVersion, version, (uint32_t) strlen("0.0.0"));
+    if (version->length > 0) return true;
+
     if(!getExeVersionRaw(exe, version)) return false;
 
     //MATE Terminal 1.26.1
@@ -549,7 +575,7 @@ static bool getTerminalVersionZed(FFstrbuf* exe, FFstrbuf* version)
 #ifndef _WIN32
 static bool getTerminalVersionKitty(FFstrbuf* exe, FFstrbuf* version)
 {
-    #if defined(__linux__) || defined(__FreeBSD__)
+    #if defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__)
     char buffer[1024] = {};
     if (
         #ifdef __linux__
@@ -580,6 +606,7 @@ static bool getTerminalVersionKitty(FFstrbuf* exe, FFstrbuf* version)
     // https://github.com/fastfetch-cli/fastfetch/discussions/1030#discussioncomment-9845233
     if (ffGetTerminalResponse(
         "\eP+q6b697474792d71756572792d76657273696f6e\e\\", // kitty-query-version
+        1,
         "\eP1+r%*[^=]=%63[^\e]\e\\\\", versionHex) == NULL)
     {
         // decode hex string
@@ -651,7 +678,7 @@ bool fftsGetTerminalVersion(FFstrbuf* processName, FF_MAYBE_UNUSED FFstrbuf* exe
 
     #endif
 
-    #if defined(__linux__) || defined(__FreeBSD__) || defined(__sun)
+    #if defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__sun)
 
     if(ffStrbufStartsWithIgnCaseS(processName, "gnome-terminal"))
         return getTerminalVersionGnome(exe, version);
@@ -660,7 +687,7 @@ bool fftsGetTerminalVersion(FFstrbuf* processName, FF_MAYBE_UNUSED FFstrbuf* exe
         return getTerminalVersionKonsole(exe, version);
 
     if(ffStrbufIgnCaseEqualS(processName, "yakuake"))
-        return getExeVersionGeneral(exe, version);//yakuake 22.12.3
+        return getTerminalVersionKonsole(exe, version); // yakuake shares code with konsole
 
     if(ffStrbufIgnCaseEqualS(processName, "xfce4-terminal"))
         return getTerminalVersionXfce4Terminal(exe, version);

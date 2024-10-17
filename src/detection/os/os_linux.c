@@ -132,6 +132,15 @@ static void getUbuntuFlavour(FFOSResult* result)
         ffStrbufSetS(&result->idLike, "ubuntu");
         return;
     }
+
+    if(ffStrContains(xdgConfigDirs, "lliurex"))
+    {
+        ffStrbufSetS(&result->name, "LliureX");
+        ffStrbufSetS(&result->prettyName, "LliureX");
+        ffStrbufSetS(&result->id, "lliurex");
+        ffStrbufSetS(&result->idLike, "ubuntu");
+        return;
+    }
 }
 
 static void getDebianVersion(FFOSResult* result)
@@ -160,6 +169,13 @@ static bool detectDebianDerived(FFOSResult* result)
     else if (ffStrbufStartsWithS(&result->name, "Loc-OS"))
     {
         ffStrbufSetS(&result->id, "locos");
+        ffStrbufSetS(&result->idLike, "debian");
+        return true;
+    }
+    else if (ffStrbufEqualS(&result->name, "Parrot Security"))
+    {
+        // https://github.com/ParrotSec/base-files/blob/c06f6d42ddf8d79564882306576576eddab7d907/etc/os-release
+        ffStrbufSetS(&result->id, "parrot");
         ffStrbufSetS(&result->idLike, "debian");
         return true;
     }

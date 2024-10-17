@@ -10,7 +10,7 @@
 
 #include <stdlib.h>
 
-#define FF_GPU_NUM_FORMAT_ARGS 12
+#define FF_GPU_NUM_FORMAT_ARGS 13
 
 static void printGPUResult(FFGPUOptions* options, uint8_t index, const FFGPUResult* gpu)
 {
@@ -91,18 +91,19 @@ static void printGPUResult(FFGPUOptions* options, uint8_t index, const FFGPUResu
         ffParseFrequency(gpu->frequency, &frequency);
 
         FF_PRINT_FORMAT_CHECKED(FF_GPU_MODULE_NAME, index, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_GPU_NUM_FORMAT_ARGS, ((FFformatarg[]) {
-            {FF_FORMAT_ARG_TYPE_STRBUF, &gpu->vendor, "vendor"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &gpu->name, "name"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &gpu->driver, "driver"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &tempStr, "temperature"},
-            {FF_FORMAT_ARG_TYPE_INT, &gpu->coreCount, "core-count"},
-            {FF_FORMAT_ARG_TYPE_STRING, type, "type"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &dTotal, "dedicated-total"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &dUsed, "dedicated-used"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &sTotal, "shared-total"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &sUsed, "shared-used"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &gpu->platformApi, "platform-api"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &frequency, "frequency"},
+            FF_FORMAT_ARG(gpu->vendor, "vendor"),
+            FF_FORMAT_ARG(gpu->name, "name"),
+            FF_FORMAT_ARG(gpu->driver, "driver"),
+            FF_FORMAT_ARG(tempStr, "temperature"),
+            FF_FORMAT_ARG(gpu->coreCount, "core-count"),
+            FF_FORMAT_ARG(type, "type"),
+            FF_FORMAT_ARG(dTotal, "dedicated-total"),
+            FF_FORMAT_ARG(dUsed, "dedicated-used"),
+            FF_FORMAT_ARG(sTotal, "shared-total"),
+            FF_FORMAT_ARG(sUsed, "shared-used"),
+            FF_FORMAT_ARG(gpu->platformApi, "platform-api"),
+            FF_FORMAT_ARG(frequency, "frequency"),
+            FF_FORMAT_ARG(index, "index"),
         }));
     }
 }
@@ -322,6 +323,12 @@ void ffGenerateGPUJsonResult(FFGPUOptions* options, yyjson_mut_doc* doc, yyjson_
     FF_LIST_FOR_EACH(FFGPUResult, gpu, gpus)
     {
         yyjson_mut_val* obj = yyjson_mut_arr_add_obj(doc, arr);
+
+        if (gpu->index != FF_GPU_INDEX_UNSET)
+            yyjson_mut_obj_add_uint(doc, obj, "index", gpu->index);
+        else
+            yyjson_mut_obj_add_null(doc, obj, "index");
+
         if (gpu->coreCount != FF_GPU_CORE_COUNT_UNSET)
             yyjson_mut_obj_add_int(doc, obj, "coreCount", gpu->coreCount);
         else
@@ -402,6 +409,7 @@ void ffPrintGPUHelpFormat(void)
         "GPU used shared memory - shared-used",
         "The platform API used when detecting the GPU - platform-api",
         "Current frequency in GHz - frequency",
+        "GPU vendor specific index - index",
     }));
 }
 

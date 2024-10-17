@@ -56,21 +56,49 @@ static uint32_t getNumStringsImpl(const char* filename, const char* needle)
     return count;
 }
 
-static uint32_t getNumStrings(FFstrbuf* baseDir, const char* filename, const char* needle)
+static uint32_t getNumStrings(FFstrbuf* baseDir, const char* filename, const char* needle, const char* packageId)
 {
     uint32_t baseDirLength = baseDir->length;
     ffStrbufAppendS(baseDir, filename);
-    uint32_t num_elements = getNumStringsImpl(baseDir->chars, needle);
+
+    FF_STRBUF_AUTO_DESTROY cacheDir = ffStrbufCreate();
+    FF_STRBUF_AUTO_DESTROY cacheContent = ffStrbufCreate();
+
+    uint32_t num_elements;
+    if (ffPackagesReadCache(&cacheDir, &cacheContent, baseDir->chars, packageId, &num_elements))
+    {
+        ffStrbufSubstrBefore(baseDir, baseDirLength);
+        return num_elements;
+    }
+
+    num_elements = getNumStringsImpl(baseDir->chars, needle);
     ffStrbufSubstrBefore(baseDir, baseDirLength);
+
+    ffPackagesWriteCache(&cacheDir, &cacheContent, num_elements);
+
     return num_elements;
 }
 
-static uint32_t getSQLite3Int(FFstrbuf* baseDir, const char* dbPath, const char* query)
+static uint32_t getSQLite3Int(FFstrbuf* baseDir, const char* dbPath, const char* query, const char* packageId)
 {
     uint32_t baseDirLength = baseDir->length;
     ffStrbufAppendS(baseDir, dbPath);
-    uint32_t num_elements = (uint32_t) ffSettingsGetSQLite3Int(baseDir->chars, query);
+
+    FF_STRBUF_AUTO_DESTROY cacheDir = ffStrbufCreate();
+    FF_STRBUF_AUTO_DESTROY cacheContent = ffStrbufCreate();
+
+    uint32_t num_elements;
+    if (ffPackagesReadCache(&cacheDir, &cacheContent, baseDir->chars, packageId, &num_elements))
+    {
+        ffStrbufSubstrBefore(baseDir, baseDirLength);
+        return num_elements;
+    }
+
+    num_elements = (uint32_t) ffSettingsGetSQLite3Int(baseDir->chars, query);
     ffStrbufSubstrBefore(baseDir, baseDirLength);
+
+    ffPackagesWriteCache(&cacheDir, &cacheContent, num_elements);
+
     return num_elements;
 }
 
@@ -322,7 +350,7 @@ static uint32_t getSnap(FFstrbuf* baseDir)
 
 static uint32_t getRpmFromLibrpm(void)
 {
-    FF_LIBRARY_LOAD(rpm, &instance.config.library.librpm, 0, "librpm" FF_LIBRARY_EXTENSION, 12)
+    FF_LIBRARY_LOAD(rpm, 0, "librpm" FF_LIBRARY_EXTENSION, 12)
     FF_LIBRARY_LOAD_SYMBOL(rpm, rpmReadConfigFiles, 0)
     FF_LIBRARY_LOAD_SYMBOL(rpm, rpmtsCreate, 0)
     FF_LIBRARY_LOAD_SYMBOL(rpm, rpmtsInitIterator, 0)
@@ -439,14 +467,86 @@ static uint32_t getGuixPackages(FFstrbuf* baseDir, const char* dirname)
     return num_elements;
 }
 
+static inline uint32_t getFlatpakRuntimePackagesArch(FFstrbuf* baseDir)
+{
+    FF_AUTO_CLOSE_DIR DIR* dirp = opendir(baseDir->chars);
+    if (dirp == NULL)
+        return 0;
+
+    uint32_t num_elements = 0;
+
+    struct dirent *entry;
+    while ((entry = readdir(dirp)) != NULL)
+    {
+        if(entry->d_type == DT_DIR && entry->d_name[0] != '.')
+        {
+            num_elements += getNumElements(baseDir, entry->d_name, DT_DIR);
+        }
+    }
+
+    return num_elements;
+}
+
+static inline uint32_t getFlatpakRuntimePackages(FFstrbuf* baseDir)
+{
+    ffStrbufAppendS(baseDir, "runtime/");
+    FF_AUTO_CLOSE_DIR DIR* dirp = opendir(baseDir->chars);
+    if (dirp == NULL)
+        return 0;
+
+    uint32_t runtimeDirLength = baseDir->length;
+    uint32_t num_elements = 0;
+
+    struct dirent *entry;
+    while ((entry = readdir(dirp)) != NULL)
+    {
+        if(entry->d_type == DT_DIR && entry->d_name[0] != '.')
+        {
+            // `flatpak list` ignores `.Locale` and `.Debug` packages, and maybe others
+            const char* dot = strrchr(entry->d_name, '.');
+            if (__builtin_expect(!dot, false)) continue;
+            dot++;
+
+            if (ffStrEquals(dot, "Locale") || ffStrEquals(dot, "Debug"))
+                continue;
+
+            ffStrbufAppendS(baseDir, entry->d_name);
+            ffStrbufAppendC(baseDir, '/');
+            num_elements += getFlatpakRuntimePackagesArch(baseDir);
+            ffStrbufSubstrBefore(baseDir, runtimeDirLength);
+        }
+    }
+
+    return num_elements;
+}
+
+static uint32_t getFlatpakPackages(FFstrbuf* baseDir, const char* dirname)
+{
+    uint32_t num_elements = 0;
+    uint32_t baseDirLength = baseDir->length;
+    ffStrbufAppendS(baseDir, dirname);
+    ffStrbufAppendS(baseDir, "/flatpak/");
+    uint32_t flatpakDirLength = baseDir->length;
+
+    ffStrbufAppendS(baseDir, "app");
+    num_elements += getNumElementsImpl(baseDir->chars, DT_DIR);
+    ffStrbufSubstrBefore(baseDir, flatpakDirLength);
+
+    num_elements += getFlatpakRuntimePackages(baseDir);
+
+    ffStrbufSubstrBefore(baseDir, baseDirLength);
+
+    return num_elements;
+}
+
 static void getPackageCounts(FFstrbuf* baseDir, FFPackagesResult* packageCounts, FFPackagesOptions* options)
 {
-    if (!(options->disabled & FF_PACKAGES_FLAG_APK_BIT)) packageCounts->apk += getNumStrings(baseDir, "/lib/apk/db/installed", "C:Q");
-    if (!(options->disabled & FF_PACKAGES_FLAG_DPKG_BIT)) packageCounts->dpkg += getNumStrings(baseDir, "/var/lib/dpkg/status", "Status: install ok installed");
-    if (!(options->disabled & FF_PACKAGES_FLAG_LPKG_BIT)) packageCounts->lpkg += getNumStrings(baseDir, "/opt/Loc-OS-LPKG/installed-lpkg/Listinstalled-lpkg.list", "\n");
+    if (!(options->disabled & FF_PACKAGES_FLAG_APK_BIT)) packageCounts->apk += getNumStrings(baseDir, "/lib/apk/db/installed", "C:Q", "apk");
+    if (!(options->disabled & FF_PACKAGES_FLAG_DPKG_BIT)) packageCounts->dpkg += getNumStrings(baseDir, "/var/lib/dpkg/status", "Status: install ok installed", "dpkg");
+    if (!(options->disabled & FF_PACKAGES_FLAG_LPKG_BIT)) packageCounts->lpkg += getNumStrings(baseDir, "/opt/Loc-OS-LPKG/installed-lpkg/Listinstalled-lpkg.list", "\n", "lpkg");
     if (!(options->disabled & FF_PACKAGES_FLAG_EMERGE_BIT)) packageCounts->emerge += countFilesRecursive(baseDir, "/var/db/pkg", "SIZE");
     if (!(options->disabled & FF_PACKAGES_FLAG_EOPKG_BIT)) packageCounts->eopkg += getNumElements(baseDir, "/var/lib/eopkg/package", DT_DIR);
-    if (!(options->disabled & FF_PACKAGES_FLAG_FLATPAK_BIT)) packageCounts->flatpakSystem += getNumElements(baseDir, "/var/lib/flatpak/app", DT_DIR);
+    if (!(options->disabled & FF_PACKAGES_FLAG_FLATPAK_BIT)) packageCounts->flatpakSystem += getFlatpakPackages(baseDir, "/var/lib");
     if (!(options->disabled & FF_PACKAGES_FLAG_NIX_BIT))
     {
         packageCounts->nixDefault += getNixPackages(baseDir, "/nix/var/nix/profiles/default");
@@ -455,7 +555,7 @@ static void getPackageCounts(FFstrbuf* baseDir, FFPackagesResult* packageCounts,
     if (!(options->disabled & FF_PACKAGES_FLAG_PACMAN_BIT)) packageCounts->pacman += getNumElements(baseDir, "/var/lib/pacman/local", DT_DIR);
     if (!(options->disabled & FF_PACKAGES_FLAG_LPKGBUILD_BIT)) packageCounts->lpkgbuild += getNumElements(baseDir, "/opt/Loc-OS-LPKG/lpkgbuild/remove", DT_REG);
     if (!(options->disabled & FF_PACKAGES_FLAG_PKGTOOL_BIT)) packageCounts->pkgtool += getNumElements(baseDir, "/var/log/packages", DT_REG);
-    if (!(options->disabled & FF_PACKAGES_FLAG_RPM_BIT)) packageCounts->rpm += getSQLite3Int(baseDir, "/var/lib/rpm/rpmdb.sqlite", "SELECT count(*) FROM Packages");
+    if (!(options->disabled & FF_PACKAGES_FLAG_RPM_BIT)) packageCounts->rpm += getSQLite3Int(baseDir, "/var/lib/rpm/rpmdb.sqlite", "SELECT count(*) FROM Packages", "rpm");
     if (!(options->disabled & FF_PACKAGES_FLAG_SNAP_BIT)) packageCounts->snap += getSnap(baseDir);
     if (!(options->disabled & FF_PACKAGES_FLAG_XBPS_BIT)) packageCounts->xbps += getXBPS(baseDir, "/var/db/xbps");
     if (!(options->disabled & FF_PACKAGES_FLAG_BREW_BIT))
@@ -464,14 +564,15 @@ static void getPackageCounts(FFstrbuf* baseDir, FFPackagesResult* packageCounts,
         packageCounts->brew += getNumElements(baseDir, "/home/linuxbrew/.linuxbrew/Cellar", DT_DIR);
     }
     if (!(options->disabled & FF_PACKAGES_FLAG_PALUDIS_BIT)) packageCounts->paludis += countFilesRecursive(baseDir, "/var/db/paludis/repositories", "environment.bz2");
-    if (!(options->disabled & FF_PACKAGES_FLAG_OPKG_BIT)) packageCounts->opkg += getNumStrings(baseDir, "/usr/lib/opkg/status", "Package:"); // openwrt
+    if (!(options->disabled & FF_PACKAGES_FLAG_OPKG_BIT)) packageCounts->opkg += getNumStrings(baseDir, "/usr/lib/opkg/status", "Package:", "opkg"); // openwrt
     if (!(options->disabled & FF_PACKAGES_FLAG_AM_BIT)) packageCounts->am = getAM(baseDir);
-    if (!(options->disabled & FF_PACKAGES_FLAG_SORCERY_BIT)) packageCounts->sorcery += getNumStrings(baseDir, "/var/state/sorcery/packages", ":installed:");
+    if (!(options->disabled & FF_PACKAGES_FLAG_SORCERY_BIT)) packageCounts->sorcery += getNumStrings(baseDir, "/var/state/sorcery/packages", ":installed:", "sorcery");
     if (!(options->disabled & FF_PACKAGES_FLAG_GUIX_BIT))
     {
       packageCounts->guixSystem += getGuixPackages(baseDir, "/run/current-system/profile");
     }
     if (!(options->disabled & FF_PACKAGES_FLAG_LINGLONG_BIT)) packageCounts->linglong += getNumElements(baseDir, "/var/lib/linglong/repo/refs/heads/main", DT_DIR);
+    if (!(options->disabled & FF_PACKAGES_FLAG_PACSTALL_BIT)) packageCounts->pacstall += getNumElements(baseDir, "/var/lib/pacstall/metadata", DT_REG);
 }
 
 static void getPackageCountsRegular(FFstrbuf* baseDir, FFPackagesResult* packageCounts, FFPackagesOptions* options)
@@ -575,5 +676,5 @@ void ffDetectPackagesImpl(FFPackagesResult* result, FFPackagesOptions* options)
     }
 
     if (!(options->disabled & FF_PACKAGES_FLAG_FLATPAK_BIT))
-        result->flatpakUser = getNumElements(&baseDir, "/.local/share/flatpak/app", DT_DIR);
+        result->flatpakUser = getFlatpakPackages(&baseDir, "/.local/share");
 }

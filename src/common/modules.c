@@ -13,6 +13,7 @@ static FFModuleBaseInfo* B[] = {
     (void*) &instance.config.modules.bootmgr,
     (void*) &instance.config.modules.break_,
     (void*) &instance.config.modules.brightness,
+    (void*) &instance.config.modules.btrfs,
     NULL,
 };
 
@@ -136,6 +137,7 @@ static FFModuleBaseInfo* T[] = {
     (void*) &instance.config.modules.terminalTheme,
     (void*) &instance.config.modules.title,
     (void*) &instance.config.modules.theme,
+    (void*) &instance.config.modules.tpm,
     NULL,
 };
 

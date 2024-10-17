@@ -25,6 +25,24 @@ void ffPrintBrightness(FFBrightnessOptions* options)
         return;
     }
 
+    if (options->compact)
+    {
+        FF_STRBUF_AUTO_DESTROY str = ffStrbufCreate();
+
+        FF_LIST_FOR_EACH(FFBrightnessResult, item, result)
+        {
+            if(str.length > 0)
+                ffStrbufAppendC(&str, ' ');
+
+            const double percent = (item->current - item->min) / (item->max - item->min) * 100;
+            ffPercentAppendNum(&str, percent, options->percent, false, &options->moduleArgs);
+        }
+
+        ffPrintLogoAndKey(FF_BRIGHTNESS_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT);
+        ffStrbufPutTo(&str, stdout);
+        return;
+    }
+
     FF_STRBUF_AUTO_DESTROY key = ffStrbufCreate();
 
     uint32_t index = 0;
@@ -38,9 +56,9 @@ void ffPrintBrightness(FFBrightnessOptions* options)
         {
             uint32_t moduleIndex = result.length == 1 ? 0 : index + 1;
             FF_PARSE_FORMAT_STRING_CHECKED(&key, &options->moduleArgs.key, 3, ((FFformatarg[]){
-                {FF_FORMAT_ARG_TYPE_UINT, &moduleIndex, "index"},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &item->name, "name"},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &options->moduleArgs.keyIcon, "icon"},
+                FF_FORMAT_ARG(moduleIndex, "index"),
+                FF_FORMAT_ARG(item->name, "name"),
+                FF_FORMAT_ARG(options->moduleArgs.keyIcon, "icon"),
             }));
         }
 
@@ -73,12 +91,12 @@ void ffPrintBrightness(FFBrightnessOptions* options)
             FF_STRBUF_AUTO_DESTROY valueBar = ffStrbufCreate();
             ffPercentAppendBar(&valueBar, percent, options->percent, &options->moduleArgs);
             FF_PRINT_FORMAT_CHECKED(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY, FF_BRIGHTNESS_NUM_FORMAT_ARGS, ((FFformatarg[]) {
-                {FF_FORMAT_ARG_TYPE_STRBUF, &valueNum, "percentage"},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &item->name, "name"},
-                {FF_FORMAT_ARG_TYPE_DOUBLE, &item->max, "max"},
-                {FF_FORMAT_ARG_TYPE_DOUBLE, &item->min, "min"},
-                {FF_FORMAT_ARG_TYPE_DOUBLE, &item->current, "current"},
-                {FF_FORMAT_ARG_TYPE_STRBUF, &item->current, "percentage-bar"},
+                FF_FORMAT_ARG(valueNum, "percentage"),
+                FF_FORMAT_ARG(item->name, "name"),
+                FF_FORMAT_ARG(item->max, "max"),
+                FF_FORMAT_ARG(item->min, "min"),
+                FF_FORMAT_ARG(item->current, "current"),
+                FF_FORMAT_ARG(item->current, "percentage-bar"),
             }));
         }
 
@@ -98,6 +116,12 @@ bool ffParseBrightnessCommandOptions(FFBrightnessOptions* options, const char* k
     if (ffStrEqualsIgnCase(subKey, "ddcci-sleep"))
     {
         options->ddcciSleep = ffOptionParseUInt32(key, value);
+        return true;
+    }
+
+    if (ffStrEqualsIgnCase(subKey, "compact"))
+    {
+        options->compact = ffOptionParseBoolean(value);
         return true;
     }
 
@@ -126,6 +150,12 @@ void ffParseBrightnessJsonObject(FFBrightnessOptions* options, yyjson_val* modul
             continue;
         }
 
+        if (ffStrEqualsIgnCase(key, "compact"))
+        {
+            options->compact = (uint32_t) yyjson_get_bool(val);
+            continue;
+        }
+
         if (ffPercentParseJsonObject(key, val, &options->percent))
             continue;
 
@@ -144,6 +174,9 @@ void ffGenerateBrightnessJsonConfig(FFBrightnessOptions* options, yyjson_mut_doc
         yyjson_mut_obj_add_uint(doc, module, "ddcciSleep", options->ddcciSleep);
 
     ffPercentGenerateJsonConfig(doc, module, defaultOptions.percent, options->percent);
+
+    if (defaultOptions.compact != options->compact)
+        yyjson_mut_obj_add_bool(doc, module, "compact", options->compact);
 }
 
 void ffGenerateBrightnessJsonResult(FF_MAYBE_UNUSED FFBrightnessOptions* options, yyjson_mut_doc* doc, yyjson_mut_val* module)
@@ -205,6 +238,7 @@ void ffInitBrightnessOptions(FFBrightnessOptions* options)
 
     options->ddcciSleep = 10;
     options->percent = (FFColorRangeConfig) { 100, 100 };
+    options->compact = false;
 }
 
 void ffDestroyBrightnessOptions(FFBrightnessOptions* options)

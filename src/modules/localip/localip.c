@@ -5,7 +5,7 @@
 #include "util/stringUtils.h"
 
 #define FF_LOCALIP_DISPLAY_NAME "Local IP"
-#define FF_LOCALIP_NUM_FORMAT_ARGS 7
+#define FF_LOCALIP_NUM_FORMAT_ARGS 8
 #pragma GCC diagnostic ignored "-Wsign-conversion"
 
 static int sortIps(const FFLocalIpResult* left, const FFLocalIpResult* right)
@@ -26,10 +26,10 @@ static void formatKey(const FFLocalIpOptions* options, FFLocalIpResult* ip, uint
     {
         ffStrbufClear(key);
         FF_PARSE_FORMAT_STRING_CHECKED(key, &options->moduleArgs.key, 4, ((FFformatarg[]){
-            {FF_FORMAT_ARG_TYPE_UINT, &index, "index"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &ip->name, "name"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &ip->mac, "mac"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &options->moduleArgs.keyIcon, "icon"},
+            FF_FORMAT_ARG(index, "index"),
+            FF_FORMAT_ARG(ip->name, "name"),
+            FF_FORMAT_ARG(ip->mac, "mac"),
+            FF_FORMAT_ARG(options->moduleArgs.keyIcon, "icon"),
         }));
     }
 }
@@ -54,6 +54,34 @@ static void printIp(FFLocalIpResult* ip, bool markDefaultRoute)
             printf(" (%s)", ip->mac.chars);
         else
             ffStrbufWriteTo(&ip->mac, stdout);
+        flag = true;
+    }
+    if (ip->mtu > 0 || ip->speed > 0)
+    {
+        if (flag)
+            fputs(" [", stdout);
+        if (ip->speed > 0)
+        {
+            if (ip->speed >= 1000000)
+                printf("%g Tbps", ip->speed / 1000000.0);
+            else if (ip->speed >= 1000)
+                printf("Speed %g Gbps", ip->speed / 1000.0);
+            else
+                printf("Speed %u Mbps", (unsigned) ip->speed);
+
+            if (ip->mtu > 0)
+                fputs(" / ", stdout);
+        }
+        if (ip->mtu > 0)
+            printf("MTU %u", (unsigned) ip->mtu);
+        putchar(']');
+        flag = true;
+    }
+    if (ip->flags.length) {
+        if (flag) fputs(" <", stdout);
+        ffStrbufWriteTo(&ip->flags, stdout);
+        putchar('>');
+        flag = true;
     }
     if (markDefaultRoute && flag && ip->defaultRoute)
         fputs(" *", stdout);
@@ -114,19 +142,22 @@ void ffPrintLocalIp(FFLocalIpOptions* options)
                 FF_STRBUF_AUTO_DESTROY speedStr = ffStrbufCreate();
                 if (ip->speed > 0)
                 {
-                    if (ip->speed >= 1000)
+                    if (ip->speed >= 1000000)
+                        ffStrbufSetF(&speedStr, "%g Tbps", ip->speed / 1000000.0);
+                    else if (ip->speed >= 1000)
                         ffStrbufSetF(&speedStr, "%g Gbps", ip->speed / 1000.0);
                     else
                         ffStrbufSetF(&speedStr, "%u Mbps", (unsigned) ip->speed);
                 }
                 FF_PRINT_FORMAT_CHECKED(key.chars, 0, &options->moduleArgs, FF_PRINT_TYPE_NO_CUSTOM_KEY, FF_LOCALIP_NUM_FORMAT_ARGS, ((FFformatarg[]){
-                    {FF_FORMAT_ARG_TYPE_STRBUF, &ip->ipv4, "ipv4"},
-                    {FF_FORMAT_ARG_TYPE_STRBUF, &ip->ipv6, "ipv6"},
-                    {FF_FORMAT_ARG_TYPE_STRBUF, &ip->mac, "mac"},
-                    {FF_FORMAT_ARG_TYPE_STRBUF, &ip->name, "ifname"},
-                    {FF_FORMAT_ARG_TYPE_BOOL, &ip->defaultRoute, "is-default-route"},
-                    {FF_FORMAT_ARG_TYPE_INT, &ip->mtu, "mtu"},
-                    {FF_FORMAT_ARG_TYPE_STRBUF, &speedStr, "speed"},
+                    FF_FORMAT_ARG(ip->ipv4, "ipv4"),
+                    FF_FORMAT_ARG(ip->ipv6, "ipv6"),
+                    FF_FORMAT_ARG(ip->mac, "mac"),
+                    FF_FORMAT_ARG(ip->name, "ifname"),
+                    FF_FORMAT_ARG(ip->defaultRoute, "is-default-route"),
+                    FF_FORMAT_ARG(ip->mtu, "mtu"),
+                    FF_FORMAT_ARG(speedStr, "speed"),
+                    FF_FORMAT_ARG(ip->flags, "flags"),
                 }));
             }
             ++index;
@@ -139,6 +170,7 @@ void ffPrintLocalIp(FFLocalIpOptions* options)
         ffStrbufDestroy(&ip->ipv4);
         ffStrbufDestroy(&ip->ipv6);
         ffStrbufDestroy(&ip->mac);
+        ffStrbufDestroy(&ip->flags);
     }
 }
 
@@ -191,6 +223,33 @@ bool ffParseLocalIpCommandOptions(FFLocalIpOptions* options, const char* key, co
             options->showType |= FF_LOCALIP_TYPE_PREFIX_LEN_BIT;
         else
             options->showType &= ~FF_LOCALIP_TYPE_PREFIX_LEN_BIT;
+        return true;
+    }
+
+    if (ffStrEqualsIgnCase(subKey, "show-mtu"))
+    {
+        if (ffOptionParseBoolean(value))
+            options->showType |= FF_LOCALIP_TYPE_MTU_BIT;
+        else
+            options->showType &= ~FF_LOCALIP_TYPE_MTU_BIT;
+        return true;
+    }
+
+    if (ffStrEqualsIgnCase(subKey, "show-speed"))
+    {
+        if (ffOptionParseBoolean(value))
+            options->showType |= FF_LOCALIP_TYPE_SPEED_BIT;
+        else
+            options->showType &= ~FF_LOCALIP_TYPE_SPEED_BIT;
+        return true;
+    }
+
+    if (ffStrEqualsIgnCase(subKey, "show-flags"))
+    {
+        if (ffOptionParseBoolean(value))
+            options->showType |= FF_LOCALIP_TYPE_FLAGS_BIT;
+        else
+            options->showType &= ~FF_LOCALIP_TYPE_FLAGS_BIT;
         return true;
     }
 
@@ -288,6 +347,33 @@ void ffParseLocalIpJsonObject(FFLocalIpOptions* options, yyjson_val* module)
             continue;
         }
 
+        if (ffStrEqualsIgnCase(key, "showMtu"))
+        {
+            if (yyjson_get_bool(val))
+                options->showType |= FF_LOCALIP_TYPE_MTU_BIT;
+            else
+                options->showType &= ~FF_LOCALIP_TYPE_MTU_BIT;
+            continue;
+        }
+
+        if (ffStrEqualsIgnCase(key, "showSpeed"))
+        {
+            if (yyjson_get_bool(val))
+                options->showType |= FF_LOCALIP_TYPE_SPEED_BIT;
+            else
+                options->showType &= ~FF_LOCALIP_TYPE_SPEED_BIT;
+            continue;
+        }
+
+        if (ffStrEqualsIgnCase(key, "showFlags"))
+        {
+            if (yyjson_get_bool(val))
+                options->showType |= FF_LOCALIP_TYPE_FLAGS_BIT;
+            else
+                options->showType &= ~FF_LOCALIP_TYPE_FLAGS_BIT;
+            continue;
+        }
+
         if (ffStrEqualsIgnCase(key, "compact"))
         {
             if (yyjson_get_bool(val))
@@ -349,6 +435,15 @@ void ffGenerateLocalIpJsonConfig(FFLocalIpOptions* options, yyjson_mut_doc* doc,
         if (options->showType & FF_LOCALIP_TYPE_PREFIX_LEN_BIT)
             yyjson_mut_obj_add_bool(doc, module, "showPrefixLen", true);
 
+        if (options->showType & FF_LOCALIP_TYPE_MTU_BIT)
+            yyjson_mut_obj_add_bool(doc, module, "showMtu", true);
+
+        if (options->showType & FF_LOCALIP_TYPE_SPEED_BIT)
+            yyjson_mut_obj_add_bool(doc, module, "showSpeed", true);
+
+        if (options->showType & FF_LOCALIP_TYPE_FLAGS_BIT)
+            yyjson_mut_obj_add_bool(doc, module, "showFlags", true);
+
         if (options->showType & FF_LOCALIP_TYPE_COMPACT_BIT)
             yyjson_mut_obj_add_bool(doc, module, "compact", true);
 
@@ -379,13 +474,20 @@ void ffGenerateLocalIpJsonResult(FF_MAYBE_UNUSED FFLocalIpOptions* options, yyjs
     FF_LIST_FOR_EACH(FFLocalIpResult, ip, results)
     {
         yyjson_mut_val* obj = yyjson_mut_arr_add_obj(doc, arr);
-        yyjson_mut_obj_add_bool(doc, obj, "defaultRoute", ip->defaultRoute);
-        yyjson_mut_obj_add_strbuf(doc, obj, "ipv4", &ip->ipv4);
-        yyjson_mut_obj_add_strbuf(doc, obj, "ipv6", &ip->ipv6);
-        yyjson_mut_obj_add_strbuf(doc, obj, "mac", &ip->mac);
         yyjson_mut_obj_add_strbuf(doc, obj, "name", &ip->name);
-        yyjson_mut_obj_add_int(doc, obj, "mtu", ip->mtu);
-        yyjson_mut_obj_add_int(doc, obj, "speed", ip->speed);
+        yyjson_mut_obj_add_bool(doc, obj, "defaultRoute", ip->defaultRoute);
+        if (options->showType & FF_LOCALIP_TYPE_IPV4_BIT)
+            yyjson_mut_obj_add_strbuf(doc, obj, "ipv4", &ip->ipv4);
+        if (options->showType & FF_LOCALIP_TYPE_IPV6_BIT)
+            yyjson_mut_obj_add_strbuf(doc, obj, "ipv6", &ip->ipv6);
+        if (options->showType & FF_LOCALIP_TYPE_MAC_BIT)
+            yyjson_mut_obj_add_strbuf(doc, obj, "mac", &ip->mac);
+        if (options->showType & FF_LOCALIP_TYPE_MTU_BIT)
+            yyjson_mut_obj_add_int(doc, obj, "mtu", ip->mtu);
+        if (options->showType & FF_LOCALIP_TYPE_SPEED_BIT)
+            yyjson_mut_obj_add_int(doc, obj, "speed", ip->speed);
+        if (options->showType & FF_LOCALIP_TYPE_FLAGS_BIT)
+            yyjson_mut_obj_add_strbuf(doc, obj, "flags", &ip->flags);
     }
 
     FF_LIST_FOR_EACH(FFLocalIpResult, ip, results)
@@ -394,6 +496,7 @@ void ffGenerateLocalIpJsonResult(FF_MAYBE_UNUSED FFLocalIpOptions* options, yyjs
         ffStrbufDestroy(&ip->ipv4);
         ffStrbufDestroy(&ip->ipv6);
         ffStrbufDestroy(&ip->mac);
+        ffStrbufDestroy(&ip->flags);
     }
 }
 
@@ -407,6 +510,7 @@ void ffPrintLocalIpHelpFormat(void)
         "Is default route - is-default-route",
         "MTU size in bytes - mtu",
         "Link speed (formatted) - speed",
+        "Interface flags - flags",
     }));
 }
 
@@ -426,7 +530,7 @@ void ffInitLocalIpOptions(FFLocalIpOptions* options)
     ffOptionInitModuleArg(&options->moduleArgs, "󰩟");
 
     options->showType = FF_LOCALIP_TYPE_IPV4_BIT | FF_LOCALIP_TYPE_PREFIX_LEN_BIT
-        #ifndef __ANDROID__
+        #if !__ANDROID__ /*Permission denied*/ && !__OpenBSD__ /*Report invalid argument for some reason*/
             | FF_LOCALIP_TYPE_DEFAULT_ROUTE_ONLY_BIT
         #endif
     ;

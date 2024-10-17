@@ -14,7 +14,6 @@ void ffOpenGLHandleResult(FFOpenGLResult* result, __typeof__(&glGetString) ffglG
 
 #endif // FF_HAVE_GL
 
-
 #ifdef FF_HAVE_GLX
 #include <GL/glx.h>
 
@@ -25,7 +24,7 @@ typedef struct GLXData
     FF_LIBRARY_SYMBOL(glXQueryVersion)
     FF_LIBRARY_SYMBOL(XOpenDisplay)
     FF_LIBRARY_SYMBOL(glXChooseVisual)
-    FF_LIBRARY_SYMBOL(XCreatePixmap);
+    FF_LIBRARY_SYMBOL(XCreatePixmap)
     FF_LIBRARY_SYMBOL(glXCreateGLXPixmap)
     FF_LIBRARY_SYMBOL(glXCreateContext)
     FF_LIBRARY_SYMBOL(glXMakeCurrent)
@@ -120,7 +119,13 @@ static const char* detectByGlx(FFOpenGLResult* result)
 {
     GLXData data;
 
-    FF_LIBRARY_LOAD(glx, &instance.config.library.libGLX, "dlopen glx failed", "libGLX" FF_LIBRARY_EXTENSION, 1);
+    FF_LIBRARY_LOAD(glx, "dlopen glx failed",
+        #if !__OpenBSD__
+            "libGLX"
+        #else
+            "libGL"
+        #endif
+            FF_LIBRARY_EXTENSION, 1);
     FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(glx, data, glXGetProcAddress);
     FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(glx, data, glXQueryVersion);
     FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(glx, data, XOpenDisplay);
@@ -189,7 +194,7 @@ static const char* detectByOsMesa(FFOpenGLResult* result)
 {
     OSMesaData data;
 
-    FF_LIBRARY_LOAD(osmesa, &instance.config.library.libOSMesa, "dlopen osmesa failed", "libOSMesa" FF_LIBRARY_EXTENSION, 8);
+    FF_LIBRARY_LOAD(osmesa, "dlopen osmesa failed", "libOSMesa" FF_LIBRARY_EXTENSION, 8);
     FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(osmesa, data, OSMesaGetProcAddress);
     FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(osmesa, data, OSMesaCreateContext);
     FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(osmesa, data, OSMesaMakeCurrent);
