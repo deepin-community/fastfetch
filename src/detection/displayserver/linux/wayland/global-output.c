@@ -6,13 +6,20 @@
 
 static void waylandOutputModeListener(void* data, FF_MAYBE_UNUSED struct wl_output* output, uint32_t flags, int32_t width, int32_t height, int32_t refreshRate)
 {
-    if(!(flags & WL_OUTPUT_MODE_CURRENT))
-        return;
-
     WaylandDisplay* display = data;
-    display->width = width;
-    display->height = height;
-    display->refreshRate = refreshRate;
+
+    if (flags & WL_OUTPUT_MODE_CURRENT)
+    {
+        display->width = width;
+        display->height = height;
+        display->refreshRate = refreshRate;
+    }
+    if (flags & WL_OUTPUT_MODE_PREFERRED)
+    {
+        display->preferredWidth = width;
+        display->preferredHeight = height;
+        display->preferredRefreshRate = refreshRate;
+    }
 }
 
 static void waylandOutputScaleListener(void* data, FF_MAYBE_UNUSED struct wl_output* output, int32_t scale)
@@ -71,17 +78,14 @@ static struct zxdg_output_v1_listener zxdgOutputListener = {
     .description = (void*) ffWaylandOutputDescriptionListener,
 };
 
-void ffWaylandHandleGlobalOutput(WaylandData* wldata, struct wl_registry* registry, uint32_t name, uint32_t version)
+const char* ffWaylandHandleGlobalOutput(WaylandData* wldata, struct wl_registry* registry, uint32_t name, uint32_t version)
 {
     struct wl_proxy* output = wldata->ffwl_proxy_marshal_constructor_versioned((struct wl_proxy*) registry, WL_REGISTRY_BIND, wldata->ffwl_output_interface, version, name, wldata->ffwl_output_interface->name, version, NULL);
     if(output == NULL)
-        return;
+        return "Failed to create wl_output";
 
     WaylandDisplay display = {
         .parent = wldata,
-        .width = 0,
-        .height = 0,
-        .refreshRate = 0,
         .scale = 1,
         .transform = WL_OUTPUT_TRANSFORM_NORMAL,
         .type = FF_DISPLAY_TYPE_UNKNOWN,
@@ -90,8 +94,16 @@ void ffWaylandHandleGlobalOutput(WaylandData* wldata, struct wl_registry* regist
         .edidName = ffStrbufCreate(),
     };
 
-    wldata->ffwl_proxy_add_listener(output, (void(**)(void)) &outputListener, &display);
-    wldata->ffwl_display_roundtrip(wldata->display);
+    if (wldata->ffwl_proxy_add_listener(output, (void(**)(void)) &outputListener, &display) < 0)
+    {
+        wldata->ffwl_proxy_destroy(output);
+        return "Failed to add listener to wl_output";
+    }
+    if (wldata->ffwl_display_roundtrip(wldata->display) < 0)
+    {
+        wldata->ffwl_proxy_destroy(output);
+        return "Failed to roundtrip wl_output";
+    }
 
     if (wldata->zxdgOutputManager)
     {
@@ -108,16 +120,19 @@ void ffWaylandHandleGlobalOutput(WaylandData* wldata, struct wl_registry* regist
     wldata->ffwl_proxy_destroy(output);
 
     if(display.width <= 0 || display.height <= 0)
-        return;
+        return "Failed to get display information from wl_output";
 
     uint32_t rotation = ffWaylandHandleRotation(&display);
 
-    ffdsAppendDisplay(wldata->result,
+    FFDisplayResult* item = ffdsAppendDisplay(wldata->result,
         (uint32_t) display.width,
         (uint32_t) display.height,
         display.refreshRate / 1000.0,
         (uint32_t) (display.width / display.scale),
         (uint32_t) (display.height / display.scale),
+        (uint32_t) display.preferredWidth,
+        (uint32_t) display.preferredHeight,
+        display.preferredRefreshRate / 1000.0,
         rotation,
         display.edidName.length
             ? &display.edidName
@@ -129,21 +144,39 @@ void ffWaylandHandleGlobalOutput(WaylandData* wldata, struct wl_registry* regist
         false,
         display.id,
         (uint32_t) display.physicalWidth,
-        (uint32_t) display.physicalHeight
+        (uint32_t) display.physicalHeight,
+        "wayland-global"
     );
+    if (item)
+    {
+        if (display.hdrSupported)
+            item->hdrStatus = FF_DISPLAY_HDR_STATUS_SUPPORTED;
+        else if (display.hdrInfoAvailable)
+            item->hdrStatus = FF_DISPLAY_HDR_STATUS_UNSUPPORTED;
+        else
+            item->hdrStatus = FF_DISPLAY_HDR_STATUS_UNKNOWN;
+
+        item->manufactureYear = display.myear;
+        item->manufactureWeek = display.mweek;
+        item->serial = display.serial;
+    }
 
     ffStrbufDestroy(&display.description);
     ffStrbufDestroy(&display.name);
     ffStrbufDestroy(&display.edidName);
+
+    return NULL;
 }
 
-void ffWaylandHandleZxdgOutput(WaylandData* wldata, struct wl_registry* registry, uint32_t name, uint32_t version)
+const char* ffWaylandHandleZxdgOutput(WaylandData* wldata, struct wl_registry* registry, uint32_t name, uint32_t version)
 {
     struct wl_proxy* manager = wldata->ffwl_proxy_marshal_constructor_versioned((struct wl_proxy*) registry, WL_REGISTRY_BIND, &zxdg_output_manager_v1_interface, version, name, zxdg_output_manager_v1_interface.name, version, NULL);
     if(manager == NULL)
-        return;
+        return "Failed to create zxdg_output_manager_v1";
 
     wldata->zxdgOutputManager = manager;
+
+    return NULL;
 }
 
 #endif

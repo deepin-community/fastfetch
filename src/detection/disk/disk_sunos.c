@@ -48,7 +48,7 @@ static bool isSubvolume(const FFlist* disks, FFDisk* currentDisk)
         FF_STRBUF_AUTO_DESTROY zpoolName = ffStrbufCreateNS(index, currentDisk->mountFrom.chars);
         for(uint32_t i = 0; i < disks->length - 1; i++)
         {
-            const FFDisk* otherDevice = ffListGet(disks, i);
+            const FFDisk* otherDevice = FF_LIST_GET(FFDisk, *disks, i);
             if(ffStrbufEqualS(&otherDevice->filesystem, "zfs") && ffStrbufStartsWith(&otherDevice->mountFrom, &zpoolName))
                 return true;
         }
@@ -60,7 +60,7 @@ static bool isSubvolume(const FFlist* disks, FFDisk* currentDisk)
         //Filter all disks which device was already found. This catches BTRFS subvolumes.
         for(uint32_t i = 0; i < disks->length - 1; i++)
         {
-            const FFDisk* otherDevice = ffListGet(disks, i);
+            const FFDisk* otherDevice = FF_LIST_GET(FFDisk, *disks, i);
 
             if(ffStrbufEqual(&currentDisk->mountFrom, &otherDevice->mountFrom))
                 return true;
@@ -72,19 +72,21 @@ static bool isSubvolume(const FFlist* disks, FFDisk* currentDisk)
 
 static void detectType(const FFlist* disks, FFDisk* currentDisk, struct mnttab* device)
 {
-    if(ffStrContains(device->mnt_mntopts, MNTOPT_NOBROWSE))
+    if(hasmntopt(device, MNTOPT_NOBROWSE))
         currentDisk->type = FF_DISK_VOLUME_TYPE_HIDDEN_BIT;
     else if(isSubvolume(disks, currentDisk))
         currentDisk->type = FF_DISK_VOLUME_TYPE_SUBVOLUME_BIT;
     else
         currentDisk->type = FF_DISK_VOLUME_TYPE_REGULAR_BIT;
+    if (hasmntopt(device, MNTOPT_RO))
+        currentDisk->type |= FF_DISK_VOLUME_TYPE_READONLY_BIT;
 }
 
 static void detectStats(FFDisk* disk)
 {
     struct statvfs fs;
     if(statvfs(disk->mountpoint.chars, &fs) != 0)
-        memset(&fs, 0, sizeof(struct statvfs));
+        memset(&fs, 0, sizeof(fs));
 
     disk->bytesTotal = fs.f_blocks * fs.f_frsize;
     disk->bytesFree = fs.f_bfree * fs.f_frsize;
@@ -94,15 +96,9 @@ static void detectStats(FFDisk* disk)
     disk->filesTotal = (uint32_t) fs.f_files;
     disk->filesUsed = (uint32_t) (disk->filesTotal - fs.f_ffree);
 
-    if(fs.f_flag & ST_RDONLY)
-        disk->type |= FF_DISK_VOLUME_TYPE_READONLY_BIT;
-
     ffStrbufSetS(&disk->name, fs.f_fstr);
 
     disk->createTime = 0;
-    struct stat deviceStat;
-    if(stat(disk->mountpoint.chars, &deviceStat) == 0)
-        disk->createTime = (uint64_t) deviceStat.st_ctim.tv_sec * 1000 + (uint64_t) deviceStat.st_ctim.tv_nsec / 1000000000;
 }
 
 const char* ffDetectDisksImpl(FFDiskOptions* options, FFlist* disks)

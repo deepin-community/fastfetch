@@ -9,7 +9,7 @@
 #include <ctype.h>
 #include <string.h>
 
-typedef enum FFLogoSize
+typedef enum __attribute__((__packed__)) FFLogoSize
 {
     FF_LOGO_SIZE_UNKNOWN,
     FF_LOGO_SIZE_NORMAL,
@@ -40,7 +40,7 @@ static bool ffLogoPrintCharsRaw(const char* data, size_t length, bool printError
             if (!options->width)
             {
                 if (printError)
-                    fputs("Logo (iterm): Must set logo width when using position right\n", stderr);
+                    fputs("Logo (image-raw): Must set logo width when using position right\n", stderr);
                 return false;
             }
             ffStrbufAppendF(&buf, "\e[2J\e[3J\e[%u;9999999H\e[%uD", (unsigned) options->paddingTop + 1, (unsigned) options->paddingRight + options->width);
@@ -51,7 +51,8 @@ static bool ffLogoPrintCharsRaw(const char* data, size_t length, bool printError
         if (options->position == FF_LOGO_POSITION_LEFT || options->position == FF_LOGO_POSITION_RIGHT)
         {
             uint16_t X = 0, Y = 0;
-            const char* error = ffGetTerminalResponse("\e[6n", "\e[%hu;%huR", &Y, &X);
+            // Windows Terminal doesn't report `\e` for some reason
+            const char* error = ffGetTerminalResponse("\e[6n", 2, "%*[^0-9]%hu;%huR", &Y, &X); // %*[^0-9]: ignore optional \e[
             if (error)
             {
                 if (printError)
@@ -59,7 +60,11 @@ static bool ffLogoPrintCharsRaw(const char* data, size_t length, bool printError
                 return true;
             }
             if (options->position == FF_LOGO_POSITION_LEFT)
+            {
+                if (options->width + options->paddingLeft > X)
+                    X = (uint16_t) (options->width + options->paddingLeft);
                 instance.state.logoWidth = X + instance.config.logo.paddingRight - 1;
+            }
             instance.state.logoHeight = Y;
             fputs("\e[H", stdout);
         }
@@ -382,13 +387,30 @@ static const FFlogo* logoGetBuiltinDetected(FFLogoSize size)
     if(logo != NULL)
         return logo;
 
-    logo = logoGetBuiltin(&os->prettyName, size);
-    if(logo != NULL)
-        return logo;
+    if (ffStrbufContainC(&os->idLike, ' '))
+    {
+        FF_STRBUF_AUTO_DESTROY buf = ffStrbufCreate();
+        for (
+            uint32_t start = 0, end = ffStrbufFirstIndexC(&os->idLike, ' ');
+            true;
+            start = end + 1, end = ffStrbufNextIndexC(&os->idLike, start, ' ')
+        )
+        {
+            ffStrbufSetNS(&buf, end - start, os->idLike.chars + start);
+            logo = logoGetBuiltin(&buf, size);
+            if(logo != NULL)
+                return logo;
 
-    logo = logoGetBuiltin(&os->idLike, size);
-    if(logo != NULL)
-        return logo;
+            if (end >= os->idLike.length)
+                break;
+        }
+    }
+    else
+    {
+        logo = logoGetBuiltin(&os->idLike, size);
+        if(logo != NULL)
+            return logo;
+    }
 
     logo = logoGetBuiltin(&instance.state.platform.sysinfo.name, size);
     if(logo != NULL)
@@ -449,6 +471,9 @@ static void updateLogoPath(void)
     FFOptionsLogo* options = &instance.config.logo;
 
     if(ffPathExists(options->source.chars, FF_PATHTYPE_FILE))
+        return;
+
+    if (ffStrbufEqualS(&options->source, "-")) // stdin
         return;
 
     FF_STRBUF_AUTO_DESTROY fullPath = ffStrbufCreate();
@@ -600,7 +625,14 @@ void ffLogoPrint(void)
         ffStrbufIgnCaseEqualS(&terminal->processName, "kitty") ||
         ffStrbufIgnCaseEqualS(&terminal->processName, "konsole") ||
         ffStrbufIgnCaseEqualS(&terminal->processName, "wezterm") ||
-        ffStrbufIgnCaseEqualS(&terminal->processName, "wayst");
+        ffStrbufIgnCaseEqualS(&terminal->processName, "wayst") ||
+        ffStrbufIgnCaseEqualS(&terminal->processName, "ghostty") ||
+        #ifdef __APPLE__
+        ffStrbufIgnCaseEqualS(&terminal->processName, "WarpTerminal") ||
+        #else
+        ffStrbufIgnCaseEqualS(&terminal->processName, "warp") ||
+        #endif
+        false;
 
     //Try to load the logo as an image. If it succeeds, print it and return.
     if(logoPrintImageIfExists(supportsKitty ? FF_LOGO_TYPE_IMAGE_KITTY : FF_LOGO_TYPE_IMAGE_CHAFA, false))

@@ -5,8 +5,6 @@
 #include "modules/version/version.h"
 #include "util/stringUtils.h"
 
-#define FF_VERSION_NUM_FORMAT_ARGS 10
-
 void ffPrintVersion(FFVersionOptions* options)
 {
     FFVersionResult* result = &ffVersionResult;
@@ -30,17 +28,18 @@ void ffPrintVersion(FFVersionOptions* options)
             }
         }
 
-        FF_PRINT_FORMAT_CHECKED(FF_VERSION_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_VERSION_NUM_FORMAT_ARGS, ((FFformatarg[]){
-            {FF_FORMAT_ARG_TYPE_STRING, result->projectName, "project-name"},
-            {FF_FORMAT_ARG_TYPE_STRING, result->version, "version"},
-            {FF_FORMAT_ARG_TYPE_STRING, result->versionTweak, "version-tweak"},
-            {FF_FORMAT_ARG_TYPE_STRING, result->debugMode ? "debug" : "release", "build-type"},
-            {FF_FORMAT_ARG_TYPE_STRING, result->sysName, "sysname"},
-            {FF_FORMAT_ARG_TYPE_STRING, result->architecture, "arch"},
-            {FF_FORMAT_ARG_TYPE_STRING, result->cmakeBuiltType, "cmake-built-type"},
-            {FF_FORMAT_ARG_TYPE_STRING, result->compileTime, "compile-time"},
-            {FF_FORMAT_ARG_TYPE_STRING, result->compiler, "compiler"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &buf, "libc-used"},
+        const char* buildType = result->debugMode ? "debug" : "release";
+        FF_PRINT_FORMAT_CHECKED(FF_VERSION_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, ((FFformatarg[]){
+            FF_FORMAT_ARG(result->projectName, "project-name"),
+            FF_FORMAT_ARG(result->version, "version"),
+            FF_FORMAT_ARG(result->versionTweak, "version-tweak"),
+            FF_FORMAT_ARG(buildType, "build-type"),
+            FF_FORMAT_ARG(result->sysName, "sysname"),
+            FF_FORMAT_ARG(result->architecture, "arch"),
+            FF_FORMAT_ARG(result->cmakeBuiltType, "cmake-built-type"),
+            FF_FORMAT_ARG(result->compileTime, "compile-time"),
+            FF_FORMAT_ARG(result->compiler, "compiler"),
+            FF_FORMAT_ARG(buf, "libc"),
         }));
     }
 }
@@ -112,35 +111,31 @@ void ffGenerateVersionJsonResult(FF_MAYBE_UNUSED FFVersionOptions* options, yyjs
     }
 }
 
-void ffPrintVersionHelpFormat(void)
-{
-    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_VERSION_MODULE_NAME, "{1} {2}{3} ({5})", FF_VERSION_NUM_FORMAT_ARGS, ((const char* []) {
-        "Project name - name",
-        "Version - version",
-        "Version tweak - version-tweak",
-        "Build type (debug or release) - build-type",
-        "System name - sysname",
-        "Architecture - arch",
-        "CMake build type when compiling (Debug, Release, RelWithDebInfo, MinSizeRel) - cmake-built-type",
-        "Date time when compiling - compile-time",
-        "Compiler used when compiling - compiler",
-        "Libc used when compiling - libc",
-    }));
-}
+static FFModuleBaseInfo ffModuleInfo = {
+    .name = FF_VERSION_MODULE_NAME,
+    .description = "Print Fastfetch version",
+    .parseCommandOptions = (void*) ffParseVersionCommandOptions,
+    .parseJsonObject = (void*) ffParseVersionJsonObject,
+    .printModule = (void*) ffPrintVersion,
+    .generateJsonResult = (void*) ffGenerateVersionJsonResult,
+    .generateJsonConfig = (void*) ffGenerateVersionJsonConfig,
+    .formatArgs = FF_FORMAT_ARG_LIST(((FFModuleFormatArg[]) {
+        {"Project name", "name"},
+        {"Version", "version"},
+        {"Version tweak", "version-tweak"},
+        {"Build type (debug or release)", "build-type"},
+        {"System name", "sysname"},
+        {"Architecture", "arch"},
+        {"CMake build type when compiling (Debug, Release, RelWithDebInfo, MinSizeRel)", "cmake-built-type"},
+        {"Date time when compiling", "compile-time"},
+        {"Compiler used when compiling", "compiler"},
+        {"Libc used when compiling", "libc"},
+    }))
+};
 
 void ffInitVersionOptions(FFVersionOptions* options)
 {
-    ffOptionInitModuleBaseInfo(
-        &options->moduleInfo,
-        FF_VERSION_MODULE_NAME,
-        "Print Fastfetch version",
-        ffParseVersionCommandOptions,
-        ffParseVersionJsonObject,
-        ffPrintVersion,
-        ffGenerateVersionJsonResult,
-        ffPrintVersionHelpFormat,
-        ffGenerateVersionJsonConfig
-    );
+    options->moduleInfo = ffModuleInfo;
     ffOptionInitModuleArg(&options->moduleArgs, "");
 }
 

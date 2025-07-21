@@ -1,8 +1,5 @@
 #pragma once
 
-#ifndef FASTFETCH_INCLUDED_cf_helpers
-#define FASTFETCH_INCLUDED_cf_helpers
-
 #include "fastfetch.h"
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
@@ -31,12 +28,10 @@ static inline void cfReleaseWrapper(void* type)
 
 #define FF_CFTYPE_AUTO_RELEASE __attribute__((__cleanup__(cfReleaseWrapper)))
 
-static inline void wrapIoObjectRelease(io_service_t* service)
+static inline void wrapIoObjectRelease(io_object_t* service)
 {
     assert(service);
     if (*service)
         IOObjectRelease(*service);
 }
 #define FF_IOOBJECT_AUTO_RELEASE __attribute__((__cleanup__(wrapIoObjectRelease)))
-
-#endif

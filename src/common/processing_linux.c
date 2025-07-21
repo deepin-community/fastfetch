@@ -1,7 +1,6 @@
 #include "fastfetch.h"
 #include "common/processing.h"
 #include "common/io/io.h"
-#include "common/time.h"
 #include "util/stringUtils.h"
 #include "util/mallocHelper.h"
 
@@ -22,13 +21,23 @@
     #include <libproc.h>
 #elif defined(__sun)
     #include <procfs.h>
+#elif defined(__OpenBSD__)
+    #include <sys/param.h>
+    #include <sys/sysctl.h>
+    #include <kvm.h>
+#elif defined(__NetBSD__)
+    #include <sys/types.h>
+    #include <sys/sysctl.h>
+#elif defined(__HAIKU__)
+    #include <OS.h>
+    #include <image.h>
 #endif
 
 enum { FF_PIPE_BUFSIZ = 8192 };
 
-static inline int ffPipe2(int *fds, int flags)
+static inline int ffPipe2(int* fds, int flags)
 {
-    #ifdef __APPLE__
+    #ifndef FF_HAVE_PIPE2
         if(pipe(fds) == -1)
             return -1;
         fcntl(fds[0], F_SETFL, fcntl(fds[0], F_GETFL) | flags);
@@ -83,6 +92,16 @@ const char* ffProcessAppendOutput(FFstrbuf* buffer, char* const argv[], bool use
                 waitpid(childPid, NULL, 0);
                 return "poll(&pollfd, 1, timeout) timeout (try increasing --processing-timeout)";
             }
+            else if (errno == EINTR)
+            {
+                // The child process has been terminated. See `chldSignalHandler` in `common/init.c`
+                if (waitpid(childPid, NULL, WNOHANG) == childPid)
+                {
+                    // Read remaining data from the pipe
+                    fcntl(childPipeFd, F_SETFL, O_CLOEXEC | O_NONBLOCK);
+                    childPid = -1;
+                }
+            }
             else if (pollfd.revents & POLLERR)
             {
                 kill(childPid, SIGTERM);
@@ -97,7 +116,7 @@ const char* ffProcessAppendOutput(FFstrbuf* buffer, char* const argv[], bool use
         else if (nRead == 0)
         {
             int stat_loc = 0;
-            if (waitpid(childPid, &stat_loc, 0) == childPid)
+            if (childPid > 0 && waitpid(childPid, &stat_loc, 0) == childPid)
             {
                 if (!WIFEXITED(stat_loc))
                     return "child process exited abnormally";
@@ -106,10 +125,15 @@ const char* ffProcessAppendOutput(FFstrbuf* buffer, char* const argv[], bool use
                 // We only handle 127 as an error. See `getTerminalVersionUrxvt` in `terminalshell.c`
                 return NULL;
             }
-            return "waitpid() failed";
+            return NULL;
         }
         else if (nRead < 0)
-            break;
+        {
+            if (errno == EAGAIN)
+                return NULL;
+            else
+                break;
+        }
     };
 
     return "read(childPipeFd, str, FF_PIPE_BUFSIZ) failed";
@@ -135,12 +159,13 @@ void ffProcessGetInfoLinux(pid_t pid, FFstrbuf* processName, FFstrbuf* exe, cons
     if (exePath)
     {
         snprintf(filePath, sizeof(filePath), "/proc/%d/exe", (int)pid);
-        ffStrbufEnsureFixedLengthFree(exePath, PATH_MAX);
-        ssize_t length = readlink(filePath, exePath->chars, exePath->allocated - 1);
+        char buf[PATH_MAX];
+        ssize_t length = readlink(filePath, buf, PATH_MAX - 1);
         if (length > 0) // doesn't contain trailing NUL
         {
-            exePath->chars[length] = '\0';
-            exePath->length = (uint32_t) length;
+            buf[length] = '\0';
+            ffStrbufEnsureFixedLengthFree(exePath, (uint32_t)length);
+            ffStrbufAppendNS(exePath, (uint32_t)length, buf);
         }
     }
 
@@ -148,14 +173,12 @@ void ffProcessGetInfoLinux(pid_t pid, FFstrbuf* processName, FFstrbuf* exe, cons
 
     size_t len = 0;
     int mibs[] = { CTL_KERN, KERN_PROCARGS2, pid };
-    if (sysctl(mibs, sizeof(mibs) / sizeof(*mibs), NULL, &len, NULL, 0) == 0)
+    if (sysctl(mibs, ARRAY_SIZE(mibs), NULL, &len, NULL, 0) == 0)
     {// try get arg0
-        #ifndef MAC_OS_X_VERSION_10_15
         //don't know why if don't let len longer, proArgs2 and len will change during the following sysctl() in old MacOS version.
         len++;
-        #endif
         FF_AUTO_FREE char* const procArgs2 = malloc(len);
-        if (sysctl(mibs, sizeof(mibs) / sizeof(*mibs), procArgs2, &len, NULL, 0) == 0)
+        if (sysctl(mibs, ARRAY_SIZE(mibs), procArgs2, &len, NULL, 0) == 0)
         {
             // https://gist.github.com/nonowarn/770696#file-getargv-c-L46
             uint32_t argc = *(uint32_t*) procArgs2;
@@ -187,17 +210,18 @@ void ffProcessGetInfoLinux(pid_t pid, FFstrbuf* processName, FFstrbuf* exe, cons
     }
     else
     {
-        ffStrbufEnsureFixedLengthFree(exe, PATH_MAX);
-        int length = proc_pidpath(pid, exe->chars, exe->allocated);
+        char buf[PROC_PIDPATHINFO_MAXSIZE];
+        int length = proc_pidpath(pid, buf, ARRAY_SIZE(buf));
         if (length > 0)
         {
-            exe->length = (uint32_t) length;
+            ffStrbufEnsureFixedLengthFree(exe, (uint32_t) length);
+            ffStrbufAppendNS(exe, (uint32_t) length, buf);
             if (exePath)
                 ffStrbufSet(exePath, exe);
         }
     }
 
-    #elif defined(__FreeBSD__)
+    #elif defined(__FreeBSD__) || defined(__NetBSD__)
 
     size_t size = ARG_MAX;
     FF_AUTO_FREE char* args = malloc(size);
@@ -205,7 +229,13 @@ void ffProcessGetInfoLinux(pid_t pid, FFstrbuf* processName, FFstrbuf* exe, cons
     static_assert(ARG_MAX > PATH_MAX, "");
 
     if(exePath && sysctl(
-        (int[]){CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, pid}, 4,
+        (int[]){CTL_KERN,
+        #if __FreeBSD__
+            KERN_PROC, KERN_PROC_PATHNAME, pid
+        #else
+            KERN_PROC_ARGS, pid, KERN_PROC_PATHNAME
+        #endif
+        }, 4,
         args, &size,
         NULL, 0
     ) == 0)
@@ -213,7 +243,13 @@ void ffProcessGetInfoLinux(pid_t pid, FFstrbuf* processName, FFstrbuf* exe, cons
 
     size = ARG_MAX;
     if(sysctl(
-        (int[]){CTL_KERN, KERN_PROC, KERN_PROC_ARGS, pid}, 4,
+        (int[]){CTL_KERN,
+            #if __FreeBSD__
+                KERN_PROC, KERN_PROC_ARGS, pid
+            #else
+                KERN_PROC_ARGS, pid, KERN_PROC_ARGV,
+            #endif
+        }, 4,
         args, &size,
         NULL, 0
     ) == 0)
@@ -238,7 +274,7 @@ void ffProcessGetInfoLinux(pid_t pid, FFstrbuf* processName, FFstrbuf* exe, cons
 
     #elif defined(__sun)
 
-    char filePath[PATH_MAX];
+    char filePath[128];
     snprintf(filePath, sizeof(filePath), "/proc/%d/psinfo", (int) pid);
     psinfo_t proc;
     if (ffReadFileData(filePath, sizeof(proc), &proc) == sizeof(proc))
@@ -250,13 +286,46 @@ void ffProcessGetInfoLinux(pid_t pid, FFstrbuf* processName, FFstrbuf* exe, cons
     if (exePath)
     {
         snprintf(filePath, sizeof(filePath), "/proc/%d/path/a.out", (int) pid);
-        ffStrbufEnsureFixedLengthFree(exePath, PATH_MAX);
-        ssize_t length = readlink(filePath, exePath->chars, exePath->allocated - 1);
+        char buf[PATH_MAX];
+        ssize_t length = readlink(filePath, buf, PATH_MAX - 1);
         if (length > 0) // doesn't contain trailing NUL
         {
-            exePath->chars[length] = '\0';
-            exePath->length = (uint32_t) length;
+            buf[length] = '\0';
+            ffStrbufEnsureFixedLengthFree(exePath, (uint32_t)length);
+            ffStrbufAppendNS(exePath, (uint32_t)length, buf);
         }
+    }
+
+    #elif defined(__OpenBSD__)
+
+    kvm_t* kd = kvm_open(NULL, NULL, NULL, KVM_NO_FILES, NULL);
+    int count = 0;
+    const struct kinfo_proc* proc = kvm_getprocs(kd, KERN_PROC_PID, pid, sizeof(struct kinfo_proc), &count);
+    if (proc)
+    {
+        char** argv = kvm_getargv(kd, proc, 0);
+        if (argv)
+        {
+            const char* arg0 = argv[0];
+            if (arg0[0] == '-') arg0++;
+            ffStrbufSetS(exe, arg0);
+        }
+    }
+    kvm_close(kd);
+
+    #elif defined(__HAIKU__)
+
+    image_info info;
+    int32 cookie = 0;
+
+    while (get_next_image_info(pid, &cookie, &info) == B_OK)
+    {
+        if (info.type != B_APP_IMAGE) continue;
+        ffStrbufSetS(exe, info.name);
+
+        if (exePath)
+            ffStrbufSet(exePath, exe);
+        break;
     }
 
     #endif
@@ -334,6 +403,13 @@ const char* ffProcessGetBasicInfoLinux(pid_t pid, FFstrbuf* name, pid_t* ppid, i
 
     #elif defined(__FreeBSD__)
 
+    #ifdef __DragonFly__
+        #define ki_comm kp_comm
+        #define ki_ppid kp_ppid
+        #define ki_tdev kp_tdev
+        #define ki_flag kp_flags
+    #endif
+
     struct kinfo_proc proc;
     size_t size = sizeof(proc);
     if(sysctl(
@@ -360,6 +436,34 @@ const char* ffProcessGetBasicInfoLinux(pid_t pid, FFstrbuf* name, pid_t* ppid, i
             *tty = -1;
     }
 
+    #elif defined(__NetBSD__)
+
+    struct kinfo_proc2 proc;
+    size_t size = sizeof(proc);
+    if(sysctl(
+        (int[]){CTL_KERN, KERN_PROC2, KERN_PROC_PID, pid, sizeof(proc), 1}, 6,
+        &proc, &size,
+        NULL, 0
+    ) != 0)
+        return "sysctl(KERN_PROC_PID) failed";
+
+    ffStrbufSetS(name, proc.p_comm);
+    if (ppid)
+        *ppid = (pid_t)proc.p_ppid;
+    if (tty)
+    {
+        if (proc.p_flag & P_CONTROLT)
+        {
+            const char* ttyName = devname(proc.p_tdev, S_IFCHR);
+            if (ffStrStartsWith(ttyName, "pts/"))
+                *tty = (int32_t) strtol(ttyName + strlen("pts/"), NULL, 10);
+            else
+                *tty = -1;
+        }
+        else
+            *tty = -1;
+    }
+
     #elif defined(__sun)
     char path[128];
     snprintf(path, sizeof(path), "/proc/%d/psinfo", (int) pid);
@@ -372,6 +476,35 @@ const char* ffProcessGetBasicInfoLinux(pid_t pid, FFstrbuf* name, pid_t* ppid, i
         *ppid = proc.pr_ppid;
     if (tty)
         *tty = (int) proc.pr_ttydev;
+
+    #elif defined(__OpenBSD__)
+
+    kvm_t* kd = kvm_open(NULL, NULL, NULL, KVM_NO_FILES, NULL);
+    int count = 0;
+    const struct kinfo_proc* proc = kvm_getprocs(kd, KERN_PROC_PID, pid, sizeof(struct kinfo_proc), &count);
+    if (proc)
+    {
+        ffStrbufSetS(name, proc->p_comm);
+        if (ppid)
+            *ppid = proc->p_ppid;
+        if (tty)
+            *tty = (int) proc->p_tdev;
+    }
+    kvm_close(kd);
+    if (!proc)
+        return "kvm_getprocs() failed";
+
+    #elif defined(__HAIKU__)
+
+    team_info info;
+    if (get_team_info(pid, &info) == B_OK)
+    {
+        ffStrbufSetS(name, info.name);
+        if (ppid)
+            *ppid = info.parent;
+    }
+
+    FF_UNUSED(tty);
 
     #else
 

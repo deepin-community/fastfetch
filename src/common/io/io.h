@@ -13,6 +13,8 @@
     #include <unistd.h>
     #include <dirent.h>
     #include <sys/stat.h>
+    #include <errno.h>
+    #include <limits.h>
     typedef int FFNativeFD;
     #define FF_INVALID_FD (-1)
     // procfs's file can be changed between read calls such as /proc/meminfo and /proc/uptime.
@@ -66,9 +68,11 @@ static inline ssize_t ffReadFDData(FFNativeFD fd, size_t dataSize, void* data)
 }
 
 ssize_t ffReadFileData(const char* fileName, size_t dataSize, void* data);
+ssize_t ffReadFileDataRelative(FFNativeFD dfd, const char* fileName, size_t dataSize, void* data);
 
 bool ffAppendFDBuffer(FFNativeFD fd, FFstrbuf* buffer);
 bool ffAppendFileBuffer(const char* fileName, FFstrbuf* buffer);
+bool ffAppendFileBufferRelative(FFNativeFD dfd, const char* fileName, FFstrbuf* buffer);
 
 static inline bool ffReadFileBuffer(const char* fileName, FFstrbuf* buffer)
 {
@@ -76,12 +80,19 @@ static inline bool ffReadFileBuffer(const char* fileName, FFstrbuf* buffer)
     return ffAppendFileBuffer(fileName, buffer);
 }
 
+static inline bool ffReadFileBufferRelative(FFNativeFD dfd, const char* fileName, FFstrbuf* buffer)
+{
+    ffStrbufClear(buffer);
+    return ffAppendFileBufferRelative(dfd, fileName, buffer);
+}
+
 //Bit flags, combine with |
-typedef enum FFPathType
+typedef enum __attribute__((__packed__)) FFPathType
 {
     FF_PATHTYPE_FILE = 1 << 0,
     FF_PATHTYPE_DIRECTORY = 1 << 1,
     FF_PATHTYPE_ANY = FF_PATHTYPE_FILE | FF_PATHTYPE_DIRECTORY,
+    FF_PATHTYPE_FORCE_UNSIGNED = UINT8_MAX,
 } FFPathType;
 
 static inline bool ffPathExists(const char* path, FFPathType pathType)
@@ -130,8 +141,8 @@ bool ffPathExpandEnv(const char* in, FFstrbuf* out);
 
 #define FF_IO_TERM_RESP_WAIT_MS 100 // #554
 
-FF_C_SCANF(2, 3)
-const char* ffGetTerminalResponse(const char* request, const char* format, ...);
+FF_C_SCANF(3, 4)
+const char* ffGetTerminalResponse(const char* request, int nParams, const char* format, ...);
 
 // Not thread safe!
 bool ffSuppressIO(bool suppress);
@@ -211,3 +222,8 @@ static inline bool ffSearchUserConfigFile(const FFlist* configDirs, const char* 
 
     return false;
 }
+
+#ifdef _WIN32
+// Only O_RDONLY is supported
+HANDLE openat(HANDLE dfd, const char* fileName, bool directory);
+#endif

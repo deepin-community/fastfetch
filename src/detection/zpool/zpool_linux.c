@@ -1,6 +1,7 @@
 #include "zpool.h"
 
 #ifdef FF_HAVE_LIBZFS
+#include "util/kmod.h"
 
 #ifdef __sun
 #define FF_DISABLE_DLOPEN
@@ -72,17 +73,22 @@ static int enumZpoolCallback(zpool_handle_t* zpool, void* param)
     item->version = data->ffzpool_get_prop_int(zpool, ZPOOL_PROP_VERSION, &source);
     item->total = data->ffzpool_get_prop_int(zpool, ZPOOL_PROP_SIZE, &source);
     item->used = item->total - data->ffzpool_get_prop_int(zpool, ZPOOL_PROP_FREE, &source);
-    item->fragmentation = data->ffzpool_get_prop_int(zpool, ZPOOL_PROP_FRAGMENTATION, &source);
+    uint64_t fragmentation = data->ffzpool_get_prop_int(zpool, ZPOOL_PROP_FRAGMENTATION, &source);
+    item->fragmentation = fragmentation == UINT64_MAX ? 0.0/0.0 : (double) fragmentation;
     return 0;
 }
 
 const char* ffDetectZpool(FFlist* result /* list of FFZpoolResult */)
 {
-    FF_LIBRARY_LOAD(libzfs, NULL, "dlopen libzfs" FF_LIBRARY_EXTENSION " failed", "libzfs" FF_LIBRARY_EXTENSION, 4);
+    FF_LIBRARY_LOAD(libzfs, "dlopen libzfs" FF_LIBRARY_EXTENSION " failed", "libzfs" FF_LIBRARY_EXTENSION, 4);
     FF_LIBRARY_LOAD_SYMBOL_MESSAGE(libzfs, libzfs_init);
 
     libzfs_handle_t* handle = fflibzfs_init();
-    if (!handle) return "libzfs_init() failed";
+    if (!handle)
+    {
+        if (!ffKmodLoaded("zfs")) return "`zfs` kernel module is not loaded";
+        return "libzfs_init() failed";
+    }
 
     __attribute__((__cleanup__(cleanLibzfs))) FFZfsData data = {
         .handle = handle,

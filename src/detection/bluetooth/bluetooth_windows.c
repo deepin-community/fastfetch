@@ -7,10 +7,10 @@
 
 #pragma GCC diagnostic ignored "-Wpointer-sign"
 
-const char* ffDetectBluetooth(FFlist* devices /* FFBluetoothResult */)
+const char* ffDetectBluetooth(FFBluetoothOptions* options, FFlist* devices /* FFBluetoothResult */)
 {
     // Actually bluetoothapis.dll, but it's missing on Windows 7
-    FF_LIBRARY_LOAD(bluetoothapis, NULL, "dlopen bthprops.cpl failed", "bthprops.cpl", 1)
+    FF_LIBRARY_LOAD(bluetoothapis, "dlopen bthprops.cpl failed", "bthprops.cpl", 1)
     FF_LIBRARY_LOAD_SYMBOL_MESSAGE(bluetoothapis, BluetoothFindFirstDevice)
     FF_LIBRARY_LOAD_SYMBOL_MESSAGE(bluetoothapis, BluetoothFindNextDevice)
     FF_LIBRARY_LOAD_SYMBOL_MESSAGE(bluetoothapis, BluetoothFindDeviceClose)
@@ -20,26 +20,27 @@ const char* ffDetectBluetooth(FFlist* devices /* FFBluetoothResult */)
     };
     HBLUETOOTH_DEVICE_FIND hFind = ffBluetoothFindFirstDevice(&(BLUETOOTH_DEVICE_SEARCH_PARAMS) {
         .fReturnConnected = TRUE,
-        .fReturnRemembered = TRUE,
-        .fReturnAuthenticated = TRUE,
-        .fReturnUnknown = TRUE,
+        .fReturnRemembered = options->showDisconnected,
+        .fReturnAuthenticated = options->showDisconnected,
         .dwSize = sizeof(BLUETOOTH_DEVICE_SEARCH_PARAMS)
     }, &btdi);
     if(!hFind)
     {
+        if (GetLastError() == ERROR_NO_MORE_ITEMS)
+            return NULL;
         return "BluetoothFindFirstDevice() failed";
     }
 
     do {
         FFBluetoothResult* device = ffListAdd(devices);
         ffStrbufInitWS(&device->name, btdi.szName);
-        ffStrbufInitF(&device->address, "%02x:%02x:%02x:%02x:%02x:%02x",
-            btdi.Address.rgBytes[0],
-            btdi.Address.rgBytes[1],
-            btdi.Address.rgBytes[2],
-            btdi.Address.rgBytes[3],
+        ffStrbufInitF(&device->address, "%02X:%02X:%02X:%02X:%02X:%02X",
+            btdi.Address.rgBytes[5],
             btdi.Address.rgBytes[4],
-            btdi.Address.rgBytes[5]);
+            btdi.Address.rgBytes[3],
+            btdi.Address.rgBytes[2],
+            btdi.Address.rgBytes[1],
+            btdi.Address.rgBytes[0]);
         ffStrbufInit(&device->type);
         device->battery = 0;
         device->connected = !!btdi.fConnected;
@@ -120,6 +121,9 @@ const char* ffDetectBluetooth(FFlist* devices /* FFBluetoothResult */)
     } while (ffBluetoothFindNextDevice(hFind, &btdi));
 
     ffBluetoothFindDeviceClose(hFind);
+
+    const char* ffBluetoothDetectBattery(FFlist* result);
+    ffBluetoothDetectBattery(devices);
 
     return NULL;
 }

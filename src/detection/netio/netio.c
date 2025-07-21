@@ -2,8 +2,6 @@
 
 #include "common/time.h"
 
-const char* ffNetIOGetIoCounters(FFlist* result, FFNetIOOptions* options);
-
 static FFlist ioCounters1;
 static uint64_t time1;
 
@@ -41,9 +39,9 @@ const char* ffDetectNetIO(FFlist* result, FFNetIOOptions* options)
         return "No network interfaces found";
 
     uint64_t time2 = ffTimeGetNow();
-    while (time2 - time1 < 1000)
+    while (time2 - time1 < options->waitTime)
     {
-        ffTimeSleep((uint32_t) (1000 - (time2 - time1)));
+        ffTimeSleep((uint32_t) (options->waitTime - (time2 - time1)));
         time2 = ffTimeGetNow();
     }
 
@@ -56,8 +54,8 @@ const char* ffDetectNetIO(FFlist* result, FFNetIOOptions* options)
 
     for (uint32_t i = 0; i < result->length; ++i)
     {
-        FFNetIOResult* icPrev = (FFNetIOResult*)ffListGet(&ioCounters1, i);
-        FFNetIOResult* icCurr = (FFNetIOResult*)ffListGet(result, i);
+        FFNetIOResult* icPrev = FF_LIST_GET(FFNetIOResult, ioCounters1, i);
+        FFNetIOResult* icCurr = FF_LIST_GET(FFNetIOResult, *result, i);
         if (!ffStrbufEqual(&icPrev->name, &icCurr->name))
             return "Network interface name changed";
 

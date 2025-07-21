@@ -56,7 +56,8 @@ static pid_t getShellInfo(FFShellResult* result, pid_t pid)
                 ffStrbufEqualS(&result->processName, "fastfetch")           || //994
                 ffStrbufEqualS(&result->processName, "flashfetch")          ||
                 ffStrbufContainS(&result->processName, "debug")             ||
-                ffStrbufContainS(&result->processName, "not-found")         ||
+                ffStrbufContainS(&result->processName, "command-not-")      ||
+                ffStrbufEqualS(&result->processName, "proot")              ||
                 ffStrbufEndsWithS(&result->processName, ".sh")
             )
             {
@@ -83,6 +84,8 @@ static pid_t getTerminalInfo(FFTerminalResult* result, pid_t pid)
     {
         //Known shells
         if (
+            ffStrbufEqualS(&result->processName, "sudo")       ||
+            ffStrbufEqualS(&result->processName, "su")         ||
             ffStrbufEqualS(&result->processName, "sh")         ||
             ffStrbufEqualS(&result->processName, "ash")        ||
             ffStrbufEqualS(&result->processName, "bash")       ||
@@ -103,6 +106,7 @@ static pid_t getTerminalInfo(FFTerminalResult* result, pid_t pid)
             ffStrbufEqualS(&result->processName, "login")      ||
             ffStrbufEqualS(&result->processName, "clifm")      || // https://github.com/leo-arch/clifm/issues/289
             ffStrbufEqualS(&result->processName, "chezmoi")    || // #762
+            ffStrbufEqualS(&result->processName, "proot")      ||
             #ifdef __linux__
             ffStrbufStartsWithS(&result->processName, "flatpak-") || // #707
             #endif
@@ -159,23 +163,29 @@ static bool getTerminalInfoByPidEnv(FFTerminalResult* result, const char* pidEnv
 
 static void getTerminalFromEnv(FFTerminalResult* result)
 {
-    if(
-        result->processName.length > 0 &&
-        !ffStrbufStartsWithS(&result->processName, "login") &&
-        !ffStrbufEqualS(&result->processName, "(login)") &&
+    if (result->processName.length > 0)
+    {
+        if (!ffStrbufStartsWithS(&result->processName, "login") &&
+            !ffStrbufEqualS(&result->processName, "(login)") &&
 
-        #ifdef __APPLE__
-        !ffStrbufEqualS(&result->processName, "launchd") &&
-        !ffStrbufEqualS(&result->processName, "stable") && //for WarpTerminal
-        #else
-        !ffStrbufEqualS(&result->processName, "systemd") &&
-        !ffStrbufEqualS(&result->processName, "init") &&
-        !ffStrbufEqualS(&result->processName, "(init)") &&
-        !ffStrbufEqualS(&result->processName, "SessionLeader") && // #750
-        #endif
+            #ifdef __APPLE__
+            !ffStrbufEqualS(&result->processName, "launchd") &&
+            #else
+            !ffStrbufEqualS(&result->processName, "systemd") &&
+            !ffStrbufEqualS(&result->processName, "init") &&
+            !ffStrbufEqualS(&result->processName, "(init)") &&
+            !ffStrbufEqualS(&result->processName, "SessionLeader") && // #750
+            #endif
 
-        !ffStrbufEqualS(&result->processName, "0")
-    ) return;
+            !ffStrbufEqualS(&result->processName, "0")
+        ) return;
+
+        ffStrbufClear(&result->processName);
+        ffStrbufClear(&result->exe);
+        result->exeName = result->exe.chars;
+        ffStrbufClear(&result->exePath);
+        result->pid = result->ppid = 0;
+    }
 
     const char* term = NULL;
 
@@ -227,7 +237,7 @@ static void getTerminalFromEnv(FFTerminalResult* result)
     }
     #endif
 
-    #if defined(__linux__) || defined(__FreeBSD__)
+    #if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__)
     //Konsole
     else if(
         getenv("KONSOLE_VERSION") != NULL
@@ -298,11 +308,11 @@ static void setShellInfoDetails(FFShellResult* result)
 
 static void setTerminalInfoDetails(FFTerminalResult* result)
 {
-    if(ffStrbufStartsWithC(&result->processName, '.') && ffStrbufEndsWithS(&result->processName, "-wrapped"))
+    if(ffStrbufStartsWithC(&result->processName, '.') && ffStrbufContainS(&result->processName, "-wrap"))
     {
         // For NixOS. Ref: #510 and https://github.com/NixOS/nixpkgs/pull/249428
         // We use processName when detecting version and font, overriding it for simplification
-        ffStrbufSubstrBefore(&result->processName, result->processName.length - (uint32_t) strlen("-wrapped"));
+        ffStrbufSubstrBeforeLastC(&result->processName, '-');
         ffStrbufSubstrAfter(&result->processName, 0);
     }
 
@@ -320,7 +330,7 @@ static void setTerminalInfoDetails(FFTerminalResult* result)
     else if(ffStrbufEqualS(&result->processName, "com.termux"))
         ffStrbufInitStatic(&result->prettyName, "Termux");
 
-    #elif defined(__linux__) || defined(__FreeBSD__)
+    #elif defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__)
 
     else if(ffStrbufStartsWithS(&result->processName, "gnome-terminal"))
         ffStrbufInitStatic(&result->prettyName, "GNOME Terminal");
@@ -340,13 +350,23 @@ static void setTerminalInfoDetails(FFTerminalResult* result)
         ffStrbufInitStatic(&result->prettyName, "iTerm");
     else if(ffStrbufEndsWithS(&result->exePath, "Terminal.app/Contents/MacOS/Terminal"))
     {
-        ffStrbufSetStatic(&result->processName, "Apple_Terminal"); // for terminal font detection
+        ffStrbufSetStatic(&result->processName, "Apple_Terminal"); // $TERM_PROGRAM, for terminal font detection
         ffStrbufInitStatic(&result->prettyName, "Apple Terminal");
     }
     else if(ffStrbufEqualS(&result->processName, "Apple_Terminal"))
         ffStrbufInitStatic(&result->prettyName, "Apple Terminal");
+    else if(ffStrbufEndsWithS(&result->exePath, "Warp.app/Contents/MacOS/stable"))
+    {
+        ffStrbufSetStatic(&result->processName, "WarpTerminal"); // $TERM_PROGRAM, for terminal font detection
+        ffStrbufInitStatic(&result->prettyName, "Warp");
+    }
     else if(ffStrbufEqualS(&result->processName, "WarpTerminal"))
         ffStrbufInitStatic(&result->prettyName, "Warp");
+
+    #elif defined(__HAIKU__)
+
+    else if(ffStrbufEqualS(&result->processName, "Terminal"))
+        ffStrbufInitStatic(&result->prettyName, "Haiku Terminal");
 
     #endif
 

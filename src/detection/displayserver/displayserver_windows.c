@@ -36,9 +36,9 @@ static void detectDisplays(FFDisplayServerResult* ds)
     EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, (LPARAM) &monitors);
 
     DISPLAYCONFIG_PATH_INFO paths[128];
-    uint32_t pathCount = sizeof(paths) / sizeof(paths[0]);
+    uint32_t pathCount = ARRAY_SIZE(paths);
     DISPLAYCONFIG_MODE_INFO modes[256];
-    uint32_t modeCount = sizeof(modes) / sizeof(modes[0]);
+    uint32_t modeCount = ARRAY_SIZE(modes);
 
     if (QueryDisplayConfig(
         QDC_ONLY_ACTIVE_PATHS,
@@ -66,7 +66,7 @@ static void detectDisplays(FFDisplayServerResult* ds)
             {
                 FF_LIST_FOR_EACH(FFMonitorInfo, item, monitors)
                 {
-                    if (wcsncmp(item->info.szDevice, sourceName.viewGdiDeviceName, sizeof(sourceName.viewGdiDeviceName) / sizeof(wchar_t)) == 0)
+                    if (wcsncmp(item->info.szDevice, sourceName.viewGdiDeviceName, ARRAY_SIZE(sourceName.viewGdiDeviceName)) == 0)
                     {
                         monitorInfo = item;
                         break;
@@ -86,6 +86,9 @@ static void detectDisplays(FFDisplayServerResult* ds)
                     .id = path->targetInfo.id,
                 },
             };
+            uint8_t edidData[1024];
+            DWORD edidLength = 0;
+
             if(DisplayConfigGetDeviceInfo(&targetName.header) == ERROR_SUCCESS)
             {
                 wchar_t regPath[256] = L"SYSTEM\\CurrentControlSet\\Enum";
@@ -99,12 +102,11 @@ static void detectDisplays(FFDisplayServerResult* ds)
                         *pRegPath = *pDevPath;
                     ++pRegPath;
                     ++pDevPath;
-                    assert(pRegPath < regPath + sizeof(regPath) / sizeof(wchar_t) + strlen("Device Parameters"));
+                    assert(pRegPath < regPath + ARRAY_SIZE(regPath) + strlen("Device Parameters"));
                 }
                 wcscpy(pRegPath, L"Device Parameters");
 
-                uint8_t edidData[1024];
-                DWORD edidLength = sizeof(edidData);
+                edidLength = ARRAY_SIZE(edidData);
                 if (RegGetValueW(HKEY_LOCAL_MACHINE, regPath, L"EDID", RRF_RT_REG_BINARY, NULL, edidData, &edidLength) == ERROR_SUCCESS &&
                     edidLength > 0 && edidLength % 128 == 0)
                 {
@@ -113,6 +115,7 @@ static void detectDisplays(FFDisplayServerResult* ds)
                 }
                 else
                 {
+                    edidLength = 0;
                     if (targetName.flags.friendlyNameFromEdid)
                         ffStrbufSetWS(&name, targetName.monitorFriendlyDeviceName);
                     else
@@ -146,12 +149,30 @@ static void detectDisplays(FFDisplayServerResult* ds)
                 default: rotation = 0; break;
             }
 
+            DISPLAYCONFIG_TARGET_PREFERRED_MODE preferredMode = {
+                .header = {
+                    .type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_PREFERRED_MODE,
+                    .size = sizeof(preferredMode),
+                    .adapterId = path->targetInfo.adapterId,
+                    .id = path->targetInfo.id,
+                }
+            };
+            double preferredRefreshRate = 0;
+            if (DisplayConfigGetDeviceInfo(&preferredMode.header) == ERROR_SUCCESS)
+            {
+                DISPLAYCONFIG_RATIONAL freq = preferredMode.targetMode.targetVideoSignalInfo.vSyncFreq;
+                preferredRefreshRate = freq.Numerator / (double) freq.Denominator;
+            }
+
             FFDisplayResult* display = ffdsAppendDisplay(ds,
                 width,
                 height,
                 path->targetInfo.refreshRate.Numerator / (double) path->targetInfo.refreshRate.Denominator,
                 (uint32_t) (monitorInfo->info.rcMonitor.right - monitorInfo->info.rcMonitor.left),
                 (uint32_t) (monitorInfo->info.rcMonitor.bottom - monitorInfo->info.rcMonitor.top),
+                preferredMode.width,
+                preferredMode.height,
+                preferredRefreshRate,
                 rotation,
                 &name,
                 path->targetInfo.outputTechnology == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_OTHER ? FF_DISPLAY_TYPE_UNKNOWN :
@@ -162,24 +183,55 @@ static void detectDisplays(FFDisplayServerResult* ds)
                 !!(monitorInfo->info.dwFlags & MONITORINFOF_PRIMARY),
                 (uint64_t)(uintptr_t) monitorInfo->handle,
                 physicalWidth,
-                physicalHeight
+                physicalHeight,
+                "GDI"
             );
 
             if (display)
             {
-                DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO advColorInfo = {
+                DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 advColorInfo2 = {
                     .header = {
-                        .type = DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO,
-                        .size = sizeof(advColorInfo),
+                        .type = DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2,
+                        .size = sizeof(advColorInfo2),
                         .adapterId = path->targetInfo.adapterId,
                         .id = path->targetInfo.id,
                     }
                 };
-                if (DisplayConfigGetDeviceInfo(&advColorInfo.header) == ERROR_SUCCESS)
+                if (DisplayConfigGetDeviceInfo(&advColorInfo2.header) == ERROR_SUCCESS)
                 {
-                    display->hdrEnabled = !!advColorInfo.advancedColorEnabled;
-                    display->bitDepth = (uint8_t) advColorInfo.bitsPerColorChannel;
+                    if (advColorInfo2.highDynamicRangeUserEnabled)
+                        display->hdrStatus = FF_DISPLAY_HDR_STATUS_ENABLED;
+                    else if (advColorInfo2.highDynamicRangeSupported)
+                        display->hdrStatus = FF_DISPLAY_HDR_STATUS_SUPPORTED;
+                    else
+                        display->hdrStatus = FF_DISPLAY_HDR_STATUS_UNSUPPORTED;
+                    display->bitDepth = (uint8_t) advColorInfo2.bitsPerColorChannel;
                 }
+                else
+                {
+                    DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO advColorInfo = {
+                        .header = {
+                            .type = DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO,
+                            .size = sizeof(advColorInfo),
+                            .adapterId = path->targetInfo.adapterId,
+                            .id = path->targetInfo.id,
+                        }
+                    };
+                    if (DisplayConfigGetDeviceInfo(&advColorInfo.header) == ERROR_SUCCESS)
+                    {
+                        if (advColorInfo.advancedColorEnabled)
+                            display->hdrStatus = FF_DISPLAY_HDR_STATUS_ENABLED;
+                        else if (advColorInfo.advancedColorSupported)
+                            display->hdrStatus = FF_DISPLAY_HDR_STATUS_SUPPORTED;
+                        else
+                            display->hdrStatus = FF_DISPLAY_HDR_STATUS_UNSUPPORTED;
+                        display->bitDepth = (uint8_t) advColorInfo.bitsPerColorChannel;
+                    }
+                    else
+                        display->hdrStatus = FF_DISPLAY_HDR_STATUS_UNKNOWN;
+                }
+                if (edidLength > 0)
+                    ffEdidGetSerialAndManufactureDate(edidData, &display->serial, &display->manufactureYear, &display->manufactureWeek);
             }
         }
     }
@@ -205,19 +257,24 @@ void ffConnectDisplayServerImpl(FFDisplayServerResult* ds)
 
     //https://github.com/hykilpikonna/hyfetch/blob/master/neofetch#L2067
     const FFOSResult* os = ffDetectOS();
-    if(
-        ffStrbufEqualS(&os->version, "11") ||
-        ffStrbufEqualS(&os->version, "10") ||
-        ffStrbufEqualS(&os->version, "2022") ||
-        ffStrbufEqualS(&os->version, "2019") ||
-        ffStrbufEqualS(&os->version, "2016")
-    ) ffStrbufSetStatic(&ds->dePrettyName, "Fluent");
-    else if(
-        ffStrbufEqualS(&os->version, "8") ||
-        ffStrbufEqualS(&os->version, "8.1") ||
-        ffStrbufEqualS(&os->version, "2012 R2") ||
-        ffStrbufEqualS(&os->version, "2012")
-    ) ffStrbufSetStatic(&ds->dePrettyName, "Metro");
+    uint32_t ver = (uint32_t) ffStrbufToUInt(&os->version, 0);
+    if (ver > 1000)
+    {
+        // Windows Server
+        if (ver >= 2016)
+            ffStrbufSetStatic(&ds->dePrettyName, "Fluent");
+        else if (ver >= 2012)
+            ffStrbufSetStatic(&ds->dePrettyName, "Metro");
+        else
+            ffStrbufSetStatic(&ds->dePrettyName, "Aero");
+    }
     else
-        ffStrbufSetStatic(&ds->dePrettyName, "Aero");
+    {
+        if (ver >= 10)
+            ffStrbufSetStatic(&ds->dePrettyName, "Fluent");
+        else if (ver >= 8)
+            ffStrbufSetStatic(&ds->dePrettyName, "Metro");
+        else
+            ffStrbufSetStatic(&ds->dePrettyName, "Aero");
+    }
 }

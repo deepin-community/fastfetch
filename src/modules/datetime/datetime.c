@@ -9,7 +9,6 @@
 #pragma GCC diagnostic ignored "-Wformat" // warning: unknown conversion type character 'F' in format
 
 #define FF_DATETIME_DISPLAY_NAME "Date & Time"
-#define FF_DATETIME_NUM_FORMAT_ARGS 22
 
 typedef struct FFDateTimeResult
 {
@@ -26,6 +25,7 @@ typedef struct FFDateTimeResult
     uint16_t dayInYear; //52
     uint8_t dayInMonth; //21
     uint8_t dayInWeek; //1
+    char dayPretty[FASTFETCH_STRBUF_DEFAULT_ALLOC]; //01
     uint8_t hour; //15
     char hourPretty[FASTFETCH_STRBUF_DEFAULT_ALLOC]; //15
     uint8_t hour12; //3
@@ -54,6 +54,7 @@ void ffPrintDateTimeFormat(struct tm* tm, const FFModuleArgs* moduleArgs)
     result.dayInYear = (uint8_t) (tm->tm_yday + 1);
     result.dayInMonth = (uint8_t) tm->tm_mday;
     result.dayInWeek = tm->tm_wday == 0 ? 7 : (uint8_t) tm->tm_wday;
+    strftime(result.dayPretty, sizeof(result.dayPretty), "%d", tm);
     result.hour = (uint8_t) tm->tm_hour;
     strftime(result.hourPretty, sizeof(result.hourPretty), "%H", tm);
     result.hour12 = (uint8_t) (result.hour % 12);
@@ -65,29 +66,30 @@ void ffPrintDateTimeFormat(struct tm* tm, const FFModuleArgs* moduleArgs)
     strftime(result.offsetFromUtc, sizeof(result.offsetFromUtc), "%z", tm);
     strftime(result.timezoneName, sizeof(result.timezoneName), "%Z", tm);
 
-    FF_PRINT_FORMAT_CHECKED(FF_DATETIME_DISPLAY_NAME, 0, moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_DATETIME_NUM_FORMAT_ARGS, ((FFformatarg[]) {
-        {FF_FORMAT_ARG_TYPE_UINT16, &result.year, "year"}, // 1
-        {FF_FORMAT_ARG_TYPE_UINT8, &result.yearShort, "year-short"}, // 2
-        {FF_FORMAT_ARG_TYPE_UINT8, &result.month, "month"}, // 3
-        {FF_FORMAT_ARG_TYPE_STRING, result.monthPretty, "month-pretty"}, // 4
-        {FF_FORMAT_ARG_TYPE_STRING, result.monthName, "month-name"}, // 5
-        {FF_FORMAT_ARG_TYPE_STRING, result.monthNameShort, "month-name-short"}, // 6
-        {FF_FORMAT_ARG_TYPE_UINT8, &result.week, "week"}, // 7
-        {FF_FORMAT_ARG_TYPE_STRING, result.weekday, "weekday"}, // 8
-        {FF_FORMAT_ARG_TYPE_STRING, result.weekdayShort, "weekday-short"}, // 9
-        {FF_FORMAT_ARG_TYPE_UINT16, &result.dayInYear, "day-in-year"}, // 10
-        {FF_FORMAT_ARG_TYPE_UINT8, &result.dayInMonth, "day-in-month"}, // 11
-        {FF_FORMAT_ARG_TYPE_UINT8, &result.dayInWeek, "day-in-week"}, // 12
-        {FF_FORMAT_ARG_TYPE_UINT8, &result.hour, "hour"}, // 13
-        {FF_FORMAT_ARG_TYPE_STRING, result.hourPretty, "hour-pretty"}, // 14
-        {FF_FORMAT_ARG_TYPE_UINT8, &result.hour12, "hour-12"}, // 15
-        {FF_FORMAT_ARG_TYPE_STRING, result.hour12Pretty, "hour-12-pretty"}, // 16
-        {FF_FORMAT_ARG_TYPE_UINT8, &result.minute, "minute"}, // 17
-        {FF_FORMAT_ARG_TYPE_STRING, result.minutePretty, "minute-pretty"}, // 18
-        {FF_FORMAT_ARG_TYPE_UINT8, &result.second, "second"}, // 19
-        {FF_FORMAT_ARG_TYPE_STRING, result.secondPretty, "second-pretty"}, // 20
-        {FF_FORMAT_ARG_TYPE_STRING, result.offsetFromUtc, "offset-from-utc"}, // 21
-        {FF_FORMAT_ARG_TYPE_STRING, result.timezoneName, "timezone-name"}, // 22
+    FF_PRINT_FORMAT_CHECKED(FF_DATETIME_DISPLAY_NAME, 0, moduleArgs, FF_PRINT_TYPE_DEFAULT, ((FFformatarg[]) {
+        FF_FORMAT_ARG(result.year, "year"), // 1
+        FF_FORMAT_ARG(result.yearShort, "year-short"), // 2
+        FF_FORMAT_ARG(result.month, "month"), // 3
+        FF_FORMAT_ARG(result.monthPretty, "month-pretty"), // 4
+        FF_FORMAT_ARG(result.monthName, "month-name"), // 5
+        FF_FORMAT_ARG(result.monthNameShort, "month-name-short"), // 6
+        FF_FORMAT_ARG(result.week, "week"), // 7
+        FF_FORMAT_ARG(result.weekday, "weekday"), // 8
+        FF_FORMAT_ARG(result.weekdayShort, "weekday-short"), // 9
+        FF_FORMAT_ARG(result.dayInYear, "day-in-year"), // 10
+        FF_FORMAT_ARG(result.dayInMonth, "day-in-month"), // 11
+        FF_FORMAT_ARG(result.dayInWeek, "day-in-week"), // 12
+        FF_FORMAT_ARG(result.hour, "hour"), // 13
+        FF_FORMAT_ARG(result.hourPretty, "hour-pretty"), // 14
+        FF_FORMAT_ARG(result.hour12, "hour-12"), // 15
+        FF_FORMAT_ARG(result.hour12Pretty, "hour-12-pretty"), // 16
+        FF_FORMAT_ARG(result.minute, "minute"), // 17
+        FF_FORMAT_ARG(result.minutePretty, "minute-pretty"), // 18
+        FF_FORMAT_ARG(result.second, "second"), // 19
+        FF_FORMAT_ARG(result.secondPretty, "second-pretty"), // 20
+        FF_FORMAT_ARG(result.offsetFromUtc, "offset-from-utc"), // 21
+        FF_FORMAT_ARG(result.timezoneName, "timezone-name"), // 22
+        FF_FORMAT_ARG(result.dayPretty, "day-pretty"), // 23
     }));
 }
 
@@ -104,7 +106,7 @@ void ffPrintDateTime(FFDateTimeOptions* options)
     }
 
     char buffer[32];
-    if (strftime(buffer, sizeof(buffer), "%F %T", tm) == 0) //yyyy-MM-dd HH:mm:ss
+    if (strftime(buffer, ARRAY_SIZE(buffer), "%F %T", tm) == 0) //yyyy-MM-dd HH:mm:ss
     {
         ffPrintError(FF_DATETIME_DISPLAY_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, "strftime() failed");
         return;
@@ -155,47 +157,44 @@ void ffGenerateDateTimeJsonResult(FF_MAYBE_UNUSED FFDateTimeOptions* options, yy
     yyjson_mut_obj_add_strcpy(doc, module, "result", ffTimeToFullStr(ffTimeGetNow()));
 }
 
-void ffPrintDateTimeHelpFormat(void)
-{
-    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_DATETIME_MODULE_NAME, "{1}-{4}-{11} {14}:{18}:{20}", FF_DATETIME_NUM_FORMAT_ARGS, ((const char* []) {
-        "year - year",
-        "last two digits of year - year-short",
-        "month - month",
-        "month with leading zero - month-pretty",
-        "month name - month-name",
-        "month name short - month-name-short",
-        "week number on year - week",
-        "weekday - weekday",
-        "weekday short - weekday-short",
-        "day in year - day-in-year",
-        "day in month - day-in-month",
-        "day in week - day-in-week",
-        "hour - hour",
-        "hour with leading zero - hour-pretty",
-        "hour 12h format - hour-12",
-        "hour 12h format with leading zero - hour-12-pretty",
-        "minute - minute",
-        "minute with leading zero - minute-pretty",
-        "second - second",
-        "second with leading zero - second-pretty",
-        "offset from UTC in the ISO 8601 format - offset-from-utc",
-        "locale-dependent timezone name or abbreviation - timezone-name",
-    }));
-}
+static FFModuleBaseInfo ffModuleInfo = {
+    .name = FF_DATETIME_MODULE_NAME,
+    .description = "Print current date and time",
+    .parseCommandOptions = (void*) ffParseDateTimeCommandOptions,
+    .parseJsonObject = (void*) ffParseDateTimeJsonObject,
+    .printModule = (void*) ffPrintDateTime,
+    .generateJsonResult = (void*) ffGenerateDateTimeJsonResult,
+    .generateJsonConfig = (void*) ffGenerateDateTimeJsonConfig,
+    .formatArgs = FF_FORMAT_ARG_LIST(((FFModuleFormatArg[]) {
+        {"Year", "year"},
+        {"Last two digits of year", "year-short"},
+        {"Month", "month"},
+        {"Month with leading zero", "month-pretty"},
+        {"Month name", "month-name"},
+        {"Month name short", "month-name-short"},
+        {"Week number on year", "week"},
+        {"Weekday", "weekday"},
+        {"Weekday short", "weekday-short"},
+        {"Day in year", "day-in-year"},
+        {"Day in month", "day-in-month"},
+        {"Day in week", "day-in-week"},
+        {"Hour", "hour"},
+        {"Hour with leading zero", "hour-pretty"},
+        {"Hour 12h format", "hour-12"},
+        {"Hour 12h format with leading zero", "hour-12-pretty"},
+        {"Minute", "minute"},
+        {"Minute with leading zero", "minute-pretty"},
+        {"Second", "second"},
+        {"Second with leading zero", "second-pretty"},
+        {"Offset from UTC in the ISO 8601 format", "offset-from-utc"},
+        {"Locale-dependent timezone name or abbreviation", "timezone-name"},
+        {"Day in month with leading zero", "day-pretty"},
+    }))
+};
 
 void ffInitDateTimeOptions(FFDateTimeOptions* options)
 {
-    ffOptionInitModuleBaseInfo(
-        &options->moduleInfo,
-        FF_DATETIME_MODULE_NAME,
-        "Print current date and time",
-        ffParseDateTimeCommandOptions,
-        ffParseDateTimeJsonObject,
-        ffPrintDateTime,
-        ffGenerateDateTimeJsonResult,
-        ffPrintDateTimeHelpFormat,
-        ffGenerateDateTimeJsonConfig
-    );
+    options->moduleInfo = ffModuleInfo;
     ffOptionInitModuleArg(&options->moduleArgs, "");
 }
 

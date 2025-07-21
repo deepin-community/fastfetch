@@ -4,12 +4,11 @@
 
 #include "common/option.h"
 
-typedef enum FFOpenGLLibrary
+typedef enum __attribute__((__packed__)) FFOpenGLLibrary
 {
     FF_OPENGL_LIBRARY_AUTO,
     FF_OPENGL_LIBRARY_EGL,
     FF_OPENGL_LIBRARY_GLX,
-    FF_OPENGL_LIBRARY_OSMESA
 } FFOpenGLLibrary;
 
 typedef struct FFOpenGLOptions

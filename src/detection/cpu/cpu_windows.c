@@ -1,5 +1,4 @@
 #include "cpu.h"
-#include "detection/temps/temps_windows.h"
 #include "util/windows/registry.h"
 #include "util/windows/nt.h"
 #include "util/mallocHelper.h"
@@ -101,9 +100,7 @@ static const char* detectNCores(FFCPUResult* cpu)
         ptr = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*)(((uint8_t*)ptr) + ptr->Size)
     )
     {
-        if (ptr->Relationship == RelationProcessorCore)
-            ++cpu->coresPhysical;
-        else if (ptr->Relationship == RelationGroup)
+        if (ptr->Relationship == RelationGroup)
         {
             for (uint32_t index = 0; index < ptr->Group.ActiveGroupCount; ++index)
             {
@@ -111,6 +108,10 @@ static const char* detectNCores(FFCPUResult* cpu)
                 cpu->coresLogical += ptr->Group.GroupInfo[index].MaximumProcessorCount;
             }
         }
+        else if (ptr->Relationship == RelationProcessorCore)
+            ++cpu->coresPhysical;
+        else if (ptr->Relationship == RelationProcessorPackage)
+            cpu->packages++;
     }
 
     return NULL;
@@ -127,9 +128,13 @@ static const char* detectByRegistry(FFCPUResult* cpu)
 
     if (cpu->coresLogical == 0)
     {
-        DWORD cores;
-        if (RegQueryInfoKeyW(HKEY_LOCAL_MACHINE, L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor", NULL, NULL, &cores, NULL, NULL, NULL, NULL, NULL, NULL, NULL) == ERROR_SUCCESS)
-            cpu->coresOnline = cpu->coresPhysical = cpu->coresLogical = (uint16_t) cores;
+        FF_HKEY_AUTO_DESTROY hProcsKey = NULL;
+        if (ffRegOpenKeyForRead(HKEY_LOCAL_MACHINE, L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor", &hProcsKey, NULL))
+        {
+            uint32_t cores;
+            if (ffRegGetNSubKeys(hProcsKey, &cores, NULL))
+                cpu->coresOnline = cpu->coresPhysical = cpu->coresLogical = (uint16_t) cores;
+        }
     }
 
     uint32_t mhz;
@@ -160,6 +165,8 @@ static const char* detectCoreTypes(FFCPUResult* cpu)
     return NULL;
 }
 
+const char* detectThermalTemp(double* current, double* critical);
+
 const char* ffDetectCPUImpl(const FFCPUOptions* options, FFCPUResult* cpu)
 {
     detectNCores(cpu);
@@ -175,7 +182,7 @@ const char* ffDetectCPUImpl(const FFCPUOptions* options, FFCPUResult* cpu)
         detectMaxSpeedBySmbios(cpu);
 
     if(options->temp)
-        ffDetectSmbiosTemp(&cpu->temperature, NULL);
+        detectThermalTemp(&cpu->temperature, NULL);
 
     return NULL;
 }

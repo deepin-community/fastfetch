@@ -7,6 +7,7 @@
 #define FF_GPU_VMEM_SIZE_UNSET ((uint64_t)-1)
 #define FF_GPU_FREQUENCY_UNSET 0
 #define FF_GPU_CORE_USAGE_UNSET (0/0.0)
+#define FF_GPU_INDEX_UNSET ((uint32_t)-1)
 
 extern const char* FF_GPU_VENDOR_NAME_APPLE;
 extern const char* FF_GPU_VENDOR_NAME_AMD;
@@ -27,25 +28,28 @@ typedef struct FFGPUMemory
 
 typedef struct FFGPUResult
 {
+    uint32_t index;
     FFGPUType type;
     FFstrbuf vendor;
     FFstrbuf name;
     FFstrbuf driver;
     FFstrbuf platformApi;
+    FFstrbuf memoryType;
     double temperature;
     double coreUsage;
     int32_t coreCount;
     uint32_t frequency; // Maximum time clock frequency in MHz
     FFGPUMemory dedicated;
     FFGPUMemory shared;
-    uint64_t deviceId; // Used internally, may be uninitialized
+    uint64_t deviceId;
 } FFGPUResult;
 
 const char* ffDetectGPU(const FFGPUOptions* options, FFlist* result);
 const char* ffDetectGPUImpl(const FFGPUOptions* options, FFlist* gpus);
 
-const char* ffGetGPUVendorString(unsigned vendorId);
+const char* ffGPUGetVendorString(unsigned vendorId);
 
-#if defined(__linux__) || defined(__FreeBSD__) || defined(__sun)
-void ffGPUParsePciIds(FFstrbuf* content, uint8_t subclass, uint16_t vendor, uint16_t device, FFGPUResult* gpu, FFstrbuf* coreName);
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__sun) || defined(__NetBSD__) || defined(__OpenBSD__) || defined(__HAIKU__)
+void ffGPUFillVendorAndName(uint8_t subclass, uint16_t vendor, uint16_t device, FFGPUResult* gpu);
+void ffGPUQueryAmdGpuName(uint16_t deviceId, uint8_t revisionId, FFGPUResult* gpu);
 #endif

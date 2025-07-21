@@ -24,6 +24,7 @@ static const char* detectWithWmi(FFlist* result)
             brightness->max = 100;
             brightness->min = 0;
             brightness->current = vtValue.get<uint8_t>();
+            brightness->builtin = true;
 
             ffStrbufInit(&brightness->name);
             if (FFWmiVariant vtName = record.get(L"InstanceName"))
@@ -39,9 +40,10 @@ static const char* detectWithWmi(FFlist* result)
 
 static const char* detectWithDdcci(const FFDisplayServerResult* displayServer, FFlist* result)
 {
-    FF_LIBRARY_LOAD(dxva2, NULL, "dlopen dxva2" FF_LIBRARY_EXTENSION " failed", "dxva2" FF_LIBRARY_EXTENSION, 1)
+    FF_LIBRARY_LOAD(dxva2, "dlopen dxva2" FF_LIBRARY_EXTENSION " failed", "dxva2" FF_LIBRARY_EXTENSION, 1)
     FF_LIBRARY_LOAD_SYMBOL_MESSAGE(dxva2, GetPhysicalMonitorsFromHMONITOR)
     FF_LIBRARY_LOAD_SYMBOL_MESSAGE(dxva2, GetMonitorBrightness)
+    FF_LIBRARY_LOAD_SYMBOL_MESSAGE(dxva2, DestroyPhysicalMonitor)
 
     FF_LIST_FOR_EACH(FFDisplayResult, display, displayServer->displays)
     {
@@ -61,7 +63,10 @@ static const char* detectWithDdcci(const FFDisplayServerResult* displayServer, F
                 brightness->max = max;
                 brightness->min = min;
                 brightness->current = curr;
+                brightness->builtin = false;
             }
+
+            ffDestroyPhysicalMonitor(physicalMonitor.hPhysicalMonitor);
         }
     }
     return NULL;

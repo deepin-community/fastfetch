@@ -7,7 +7,7 @@
 
 static bool loadLibSymbols(FFDBusLibrary* lib)
 {
-    FF_LIBRARY_LOAD(dbus, &instance.config.library.libDBus, false, "libdbus-1" FF_LIBRARY_EXTENSION, 4);
+    FF_LIBRARY_LOAD(dbus, false, "libdbus-1" FF_LIBRARY_EXTENSION, 4);
     FF_LIBRARY_LOAD_SYMBOL_PTR(dbus, lib, dbus_bus_get, false)
     FF_LIBRARY_LOAD_SYMBOL_PTR(dbus, lib, dbus_message_new_method_call, false)
     FF_LIBRARY_LOAD_SYMBOL_PTR(dbus, lib, dbus_message_append_args, false)
@@ -171,7 +171,7 @@ DBusMessage* ffDBusGetMethodReply(FFDBusData* dbus, const char* busName, const c
     if (arg)
         dbus->lib->ffdbus_message_append_args(message, DBUS_TYPE_STRING, &arg, DBUS_TYPE_INVALID);
 
-    DBusMessage* reply = dbus->lib->ffdbus_connection_send_with_reply_and_block(dbus->connection, message, FF_DBUS_TIMEOUT_MILLISECONDS, NULL);
+    DBusMessage* reply = dbus->lib->ffdbus_connection_send_with_reply_and_block(dbus->connection, message, instance.config.general.processingTimeout, NULL);
 
     dbus->lib->ffdbus_message_unref(message);
 
@@ -189,7 +189,7 @@ DBusMessage* ffDBusGetProperty(FFDBusData* dbus, const char* busName, const char
         DBUS_TYPE_STRING, &property,
         DBUS_TYPE_INVALID);
 
-    DBusMessage* reply = dbus->lib->ffdbus_connection_send_with_reply_and_block(dbus->connection, message, FF_DBUS_TIMEOUT_MILLISECONDS, NULL);
+    DBusMessage* reply = dbus->lib->ffdbus_connection_send_with_reply_and_block(dbus->connection, message, instance.config.general.processingTimeout, NULL);
 
     dbus->lib->ffdbus_message_unref(message);
 

@@ -43,7 +43,6 @@ static void defaultConfig(void)
     ffOptionsInitGeneral(&instance.config.general);
     ffOptionsInitModules(&instance.config.modules);
     ffOptionsInitDisplay(&instance.config.display);
-    ffOptionsInitLibrary(&instance.config.library);
 }
 
 void ffInitInstance(void)
@@ -77,18 +76,20 @@ static void resetConsole(void)
 }
 
 #ifdef _WIN32
-BOOL WINAPI consoleHandler(DWORD signal)
+BOOL WINAPI consoleHandler(FF_MAYBE_UNUSED DWORD signal)
 {
-    FF_UNUSED(signal);
     resetConsole();
     exit(0);
 }
 #else
-static void exitSignalHandler(int signal)
+static void exitSignalHandler(FF_MAYBE_UNUSED int signal)
 {
-    FF_UNUSED(signal);
     resetConsole();
     exit(0);
+}
+static void chldSignalHandler(FF_MAYBE_UNUSED int signal)
+{
+    // empty; used to interrupt the poll and read syscalls
 }
 #endif
 
@@ -119,6 +120,7 @@ void ffStart(void)
     sigaction(SIGINT, &action, NULL);
     sigaction(SIGTERM, &action, NULL);
     sigaction(SIGQUIT, &action, NULL);
+    sigaction(SIGCHLD, &(struct sigaction) { .sa_handler = chldSignalHandler }, NULL);
     #endif
 
     //reset everything to default before we start printing
@@ -148,7 +150,6 @@ static void destroyConfig(void)
     ffOptionsDestroyGeneral(&instance.config.general);
     ffOptionsDestroyModules(&instance.config.modules);
     ffOptionsDestroyDisplay(&instance.config.display);
-    ffOptionsDestroyLibrary(&instance.config.library);
 }
 
 static void destroyState(void)
@@ -181,17 +182,14 @@ void ffListFeatures(void)
         #if FF_HAVE_XCB_RANDR
             "xcb-randr\n"
         #endif
-        #if FF_HAVE_XCB
-            "xcb\n"
-        #endif
         #if FF_HAVE_XRANDR
             "xrandr\n"
         #endif
-        #if FF_HAVE_X11
-            "x11\n"
-        #endif
         #if FF_HAVE_DRM
             "drm\n"
+        #endif
+        #if FF_HAVE_DRM_AMDGPU
+            "drm_amdgpu\n"
         #endif
         #if FF_HAVE_GIO
             "gio\n"
@@ -229,14 +227,14 @@ void ffListFeatures(void)
         #if FF_HAVE_GLX
             "glx\n"
         #endif
-        #if FF_HAVE_OSMESA
-            "osmesa\n"
-        #endif
         #if FF_HAVE_OPENCL
             "opencl\n"
         #endif
         #if FF_HAVE_FREETYPE
             "freetype\n"
+        #endif
+        #if FF_HAVE_PCIACCESS
+            "libpciaccess\n"
         #endif
         #if FF_HAVE_PULSE
             "libpulse\n"
@@ -244,7 +242,7 @@ void ffListFeatures(void)
         #if FF_HAVE_DDCUTIL
             "libddcutil\n"
         #endif
-        #if FF_HAVE_ELF
+        #if FF_HAVE_ELF || __sun || (__FreeBSD__ && !__DragonFly__) || __OpenBSD__ || __NetBSD__
             "libelf\n"
         #endif
         #if FF_HAVE_LIBZFS
@@ -261,6 +259,9 @@ void ffListFeatures(void)
         #endif
         #if FF_HAVE_LINUX_WIRELESS
             "linux/wireless\n"
+        #endif
+        #if FF_HAVE_EMBEDDED_PCIIDS
+            "Embedded pciids\n"
         #endif
         ""
     , stdout);

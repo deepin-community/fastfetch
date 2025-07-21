@@ -12,6 +12,7 @@ struct FFIgclData {
     FF_LIBRARY_SYMBOL(ctlEnumTemperatureSensors)
     FF_LIBRARY_SYMBOL(ctlTemperatureGetState)
     FF_LIBRARY_SYMBOL(ctlEnumMemoryModules)
+    FF_LIBRARY_SYMBOL(ctlMemoryGetProperties)
     FF_LIBRARY_SYMBOL(ctlMemoryGetState)
     FF_LIBRARY_SYMBOL(ctlEnumFrequencyDomains)
     FF_LIBRARY_SYMBOL(ctlFrequencyGetProperties)
@@ -34,7 +35,7 @@ const char* ffDetectIntelGpuInfo(const FFGpuDriverCondition* cond, FFGpuDriverRe
     if (!igclData.inited)
     {
         igclData.inited = true;
-        FF_LIBRARY_LOAD(libigcl, NULL, "dlopen igcl (ControlLib) failed", soName , 1);
+        FF_LIBRARY_LOAD(libigcl, "dlopen igcl (ControlLib) failed", soName , 1);
         FF_LIBRARY_LOAD_SYMBOL_MESSAGE(libigcl, ctlInit)
         FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(libigcl, igclData, ctlClose)
         FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(libigcl, igclData, ctlEnumerateDevices)
@@ -42,6 +43,7 @@ const char* ffDetectIntelGpuInfo(const FFGpuDriverCondition* cond, FFGpuDriverRe
         FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(libigcl, igclData, ctlEnumTemperatureSensors)
         FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(libigcl, igclData, ctlTemperatureGetState)
         FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(libigcl, igclData, ctlEnumMemoryModules)
+        FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(libigcl, igclData, ctlMemoryGetProperties)
         FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(libigcl, igclData, ctlMemoryGetState)
         FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(libigcl, igclData, ctlEnumFrequencyDomains)
         FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(libigcl, igclData, ctlFrequencyGetProperties)
@@ -128,21 +130,63 @@ const char* ffDetectIntelGpuInfo(const FFGpuDriverCondition* cond, FFGpuDriverRe
     if (result.memory)
     {
         ctl_mem_handle_t memoryModules[16];
-        uint32_t memoryCount = sizeof(memoryModules) / sizeof(memoryModules[0]);
+        uint32_t memoryCount = ARRAY_SIZE(memoryModules);
         if (igclData.ffctlEnumMemoryModules(device, &memoryCount, memoryModules) == CTL_RESULT_SUCCESS && memoryCount > 0)
         {
             result.memory->used = 0;
             result.memory->total = 0;
             for (uint32_t iMem = 0; iMem < memoryCount; iMem++)
             {
-                ctl_mem_state_t memoryState = {
-                    .Size = sizeof(ctl_mem_state_t),
+                ctl_mem_properties_t memoryProperties = {
+                    .Size = sizeof(memoryProperties),
                     .Version = 0,
                 };
-                if (igclData.ffctlMemoryGetState(memoryModules[iMem], &memoryState) == CTL_RESULT_SUCCESS)
+                if (igclData.ffctlMemoryGetProperties(memoryModules[iMem], &memoryProperties) == CTL_RESULT_SUCCESS)
                 {
-                    result.memory->total += memoryState.size;
-                    result.memory->used += memoryState.size - memoryState.free;
+                    if (memoryProperties.location == CTL_MEM_LOC_DEVICE && result.memoryType)
+                    {
+                        switch (memoryProperties.type)
+                        {
+                            #define FF_ICTL_MEM_TYPE_CASE(type) case CTL_MEM_TYPE_##type: ffStrbufSetStatic(result.memoryType, #type); break
+                            FF_ICTL_MEM_TYPE_CASE(HBM);
+                            FF_ICTL_MEM_TYPE_CASE(DDR);
+                            FF_ICTL_MEM_TYPE_CASE(DDR3);
+                            FF_ICTL_MEM_TYPE_CASE(DDR4);
+                            FF_ICTL_MEM_TYPE_CASE(DDR5);
+                            FF_ICTL_MEM_TYPE_CASE(LPDDR);
+                            FF_ICTL_MEM_TYPE_CASE(LPDDR3);
+                            FF_ICTL_MEM_TYPE_CASE(LPDDR4);
+                            FF_ICTL_MEM_TYPE_CASE(LPDDR5);
+                            FF_ICTL_MEM_TYPE_CASE(GDDR4);
+                            FF_ICTL_MEM_TYPE_CASE(GDDR5);
+                            FF_ICTL_MEM_TYPE_CASE(GDDR5X);
+                            FF_ICTL_MEM_TYPE_CASE(GDDR6);
+                            FF_ICTL_MEM_TYPE_CASE(GDDR6X);
+                            FF_ICTL_MEM_TYPE_CASE(GDDR7);
+                            #undef FF_ICTL_MEM_TYPE_CASE
+                            default:
+                                ffStrbufSetF(result.memoryType, "Unknown (%u)", memoryProperties.type);
+                                break;
+                        }
+                    }
+
+                    ctl_mem_state_t memoryState = {
+                        .Size = sizeof(ctl_mem_state_t),
+                        .Version = 0,
+                    };
+                    if (igclData.ffctlMemoryGetState(memoryModules[iMem], &memoryState) == CTL_RESULT_SUCCESS)
+                    {
+                        if (memoryProperties.location == CTL_MEM_LOC_DEVICE)
+                        {
+                            result.memory->total += memoryState.size;
+                            result.memory->used += memoryState.size - memoryState.free;
+                        }
+                        else if (result.sharedMemory && memoryProperties.location == CTL_MEM_LOC_SYSTEM)
+                        {
+                            result.sharedMemory->total += memoryState.size;
+                            result.sharedMemory->used += memoryState.size - memoryState.free;
+                        }
+                    }
                 }
             }
         }
@@ -157,7 +201,7 @@ const char* ffDetectIntelGpuInfo(const FFGpuDriverCondition* cond, FFGpuDriverRe
     if (result.temp)
     {
         ctl_temp_handle_t sensors[16];
-        uint32_t sensorCount = sizeof(sensors) / sizeof(sensors[0]);
+        uint32_t sensorCount = ARRAY_SIZE(sensors);
         if (igclData.ffctlEnumTemperatureSensors(device, &sensorCount, sensors) == CTL_RESULT_SUCCESS && sensorCount > 0)
         {
             double sumValue = 0;
@@ -171,14 +215,15 @@ const char* ffDetectIntelGpuInfo(const FFGpuDriverCondition* cond, FFGpuDriverRe
                     availableCount++;
                 }
             }
-            *result.temp = sumValue / availableCount;
+            if (availableCount > 0)
+                *result.temp = sumValue / availableCount;
         }
     }
 
     if (result.frequency)
     {
         ctl_freq_handle_t domains[16];
-        uint32_t domainCount = sizeof(domains) / sizeof(domains[0]);
+        uint32_t domainCount = ARRAY_SIZE(domains);
         if (igclData.ffctlEnumFrequencyDomains(device, &domainCount, domains) == CTL_RESULT_SUCCESS && domainCount > 0)
         {
             double maxValue = 0;
@@ -194,6 +239,9 @@ const char* ffDetectIntelGpuInfo(const FFGpuDriverCondition* cond, FFGpuDriverRe
             *result.frequency = (uint32_t) (maxValue + 0.5);
         }
     }
+
+    if (result.name)
+        ffStrbufSetS(result.name, properties.name);
 
     return NULL;
 }

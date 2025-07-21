@@ -1,6 +1,6 @@
 #include "cpu.h"
 #include "common/sysctl.h"
-#include "detection/temps/temps_apple.h"
+#include "util/apple/smc_temps.h"
 #include "util/stringUtils.h"
 
 static double detectCpuTemp(const FFstrbuf* cpuName)
@@ -15,6 +15,7 @@ static double detectCpuTemp(const FFstrbuf* cpuName)
             case 1: error = ffDetectSmcTemps(FF_TEMP_CPU_M1X, &result); break;
             case 2: error = ffDetectSmcTemps(FF_TEMP_CPU_M2X, &result); break;
             case 3: error = ffDetectSmcTemps(FF_TEMP_CPU_M3X, &result); break;
+            case 4: error = ffDetectSmcTemps(FF_TEMP_CPU_M4X, &result); break;
             default: error = "Unsupported Apple Silicon CPU";
         }
     }
@@ -59,7 +60,12 @@ static const char* detectFrequency(FFCPUResult* cpu)
         pMax = pMax > pStart[i] ? pMax : pStart[i];
 
     if (pMax > 0)
-        cpu->frequencyMax = pMax / 1000 / 1000;
+    {
+        if (pMax > 100000000) // Assume that pMax is in Hz, M1~M3
+            cpu->frequencyMax = pMax / 1000 / 1000;
+        else // Assume that pMax is in kHz, M4 and later (#1394)
+            cpu->frequencyMax = pMax / 1000;
+    }
 
     return NULL;
 }
@@ -85,8 +91,8 @@ static const char* detectCoreCount(FFCPUResult* cpu)
     if (nPerfLevels <= 0) return "sysctl(hw.nperflevels) failed";
 
     char sysctlKey[] = "hw.perflevelN.logicalcpu";
-    if (nPerfLevels > sizeof(cpu->coreTypes) / sizeof(cpu->coreTypes[0]))
-        nPerfLevels = sizeof(cpu->coreTypes) / sizeof(cpu->coreTypes[0]);
+    if (nPerfLevels > ARRAY_SIZE(cpu->coreTypes))
+        nPerfLevels = ARRAY_SIZE(cpu->coreTypes);
     for (uint32_t i = 0; i < nPerfLevels; ++i)
     {
         sysctlKey[strlen("hw.perflevel")] = (char) ('0' + i);
@@ -104,6 +110,7 @@ const char* ffDetectCPUImpl(const FFCPUOptions* options, FFCPUResult* cpu)
         return "sysctlbyname(machdep.cpu.brand_string) failed";
 
     ffSysctlGetString("machdep.cpu.vendor", &cpu->vendor);
+    cpu->packages = (uint16_t) ffSysctlGetInt("hw.packages", 1);
     if (cpu->vendor.length == 0 && ffStrbufStartsWithS(&cpu->name, "Apple "))
         ffStrbufAppendS(&cpu->vendor, "Apple");
 

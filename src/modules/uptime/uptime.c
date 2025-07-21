@@ -5,8 +5,6 @@
 #include "modules/uptime/uptime.h"
 #include "util/stringUtils.h"
 
-#define FF_UPTIME_NUM_FORMAT_ARGS 6
-
 void ffPrintUptime(FFUptimeOptions* options)
 {
     FFUptimeResult result;
@@ -34,57 +32,20 @@ void ffPrintUptime(FFUptimeOptions* options)
     if(options->moduleArgs.outputFormat.length == 0)
     {
         ffPrintLogoAndKey(FF_UPTIME_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT);
+        FF_STRBUF_AUTO_DESTROY buffer = ffStrbufCreate();
+        ffParseDuration(days, hours, minutes, seconds, &buffer);
 
-        if(days == 0 && hours == 0 && minutes == 0)
-        {
-            printf("%u seconds\n", seconds);
-            return;
-        }
-
-        if(days > 0)
-        {
-            printf("%u day", days);
-
-            if(days > 1)
-                putchar('s');
-
-            if(days >= 100)
-                fputs("(!)", stdout);
-
-            if(hours > 0 || minutes > 0)
-                fputs(", ", stdout);
-        }
-
-        if(hours > 0)
-        {
-            printf("%u hour", hours);
-
-            if(hours > 1)
-                putchar('s');
-
-            if(minutes > 0)
-                fputs(", ", stdout);
-        }
-
-        if(minutes > 0)
-        {
-            printf("%u min", minutes);
-
-            if(minutes > 1)
-                putchar('s');
-        }
-
-        putchar('\n');
+        ffStrbufPutTo(&buffer, stdout);
     }
     else
     {
-        FF_PRINT_FORMAT_CHECKED(FF_UPTIME_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_UPTIME_NUM_FORMAT_ARGS, ((FFformatarg[]){
-            {FF_FORMAT_ARG_TYPE_UINT, &days, "days"},
-            {FF_FORMAT_ARG_TYPE_UINT, &hours, "hours"},
-            {FF_FORMAT_ARG_TYPE_UINT, &minutes, "minutes"},
-            {FF_FORMAT_ARG_TYPE_UINT, &seconds, "seconds"},
-            {FF_FORMAT_ARG_TYPE_UINT, &milliseconds, "milliseconds"},
-            {FF_FORMAT_ARG_TYPE_STRING, ffTimeToShortStr(result.uptime), "boot-time"},
+        FF_PRINT_FORMAT_CHECKED(FF_UPTIME_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, ((FFformatarg[]){
+            FF_FORMAT_ARG(days, "days"),
+            FF_FORMAT_ARG(hours, "hours"),
+            FF_FORMAT_ARG(minutes, "minutes"),
+            FF_FORMAT_ARG(seconds, "seconds"),
+            FF_FORMAT_ARG(milliseconds, "milliseconds"),
+            {FF_FORMAT_ARG_TYPE_STRING, ffTimeToShortStr(result.bootTime), "boot-time"},
         }));
     }
 }
@@ -140,31 +101,27 @@ void ffGenerateUptimeJsonResult(FF_MAYBE_UNUSED FFUptimeOptions* options, yyjson
     yyjson_mut_obj_add_strcpy(doc, obj, "bootTime", ffTimeToFullStr(result.bootTime));
 }
 
-void ffPrintUptimeHelpFormat(void)
-{
-    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_UPTIME_MODULE_NAME, "{1} days {2} hours {3} mins", FF_UPTIME_NUM_FORMAT_ARGS, ((const char* []) {
-        "Days - days",
-        "Hours - hours",
-        "Minutes - minutes",
-        "Seconds - seconds",
-        "Milliseconds - milliseconds",
-        "Boot time in local timezone - boot-time",
-    }));
-}
+static FFModuleBaseInfo ffModuleInfo = {
+    .name = FF_UPTIME_MODULE_NAME,
+    .description = "Print how long system has been running",
+    .parseCommandOptions = (void*) ffParseUptimeCommandOptions,
+    .parseJsonObject = (void*) ffParseUptimeJsonObject,
+    .printModule = (void*) ffPrintUptime,
+    .generateJsonResult = (void*) ffGenerateUptimeJsonResult,
+    .generateJsonConfig = (void*) ffGenerateUptimeJsonConfig,
+    .formatArgs = FF_FORMAT_ARG_LIST(((FFModuleFormatArg[]) {
+        {"Days", "days"},
+        {"Hours", "hours"},
+        {"Minutes", "minutes"},
+        {"Seconds", "seconds"},
+        {"Milliseconds", "milliseconds"},
+        {"Boot time in local timezone", "boot-time"},
+    }))
+};
 
 void ffInitUptimeOptions(FFUptimeOptions* options)
 {
-    ffOptionInitModuleBaseInfo(
-        &options->moduleInfo,
-        FF_UPTIME_MODULE_NAME,
-        "Print how long system has been running",
-        ffParseUptimeCommandOptions,
-        ffParseUptimeJsonObject,
-        ffPrintUptime,
-        ffGenerateUptimeJsonResult,
-        ffPrintUptimeHelpFormat,
-        ffGenerateUptimeJsonConfig
-    );
+    options->moduleInfo = ffModuleInfo;
     ffOptionInitModuleArg(&options->moduleArgs, "");
 }
 

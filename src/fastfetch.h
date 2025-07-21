@@ -1,8 +1,5 @@
 #pragma once
 
-#ifndef FASTFETCH_INCLUDED
-#define FASTFETCH_INCLUDED
-
 #include "fastfetch_config.h"
 
 #include <stdint.h>
@@ -27,7 +24,16 @@
 #include "options/logo.h"
 #include "options/display.h"
 #include "options/general.h"
-#include "options/library.h"
+
+#ifdef __has_builtin
+    #if __has_builtin(__builtin_types_compatible_p)
+        #define ARRAY_SIZE(x) ({ static_assert(!__builtin_types_compatible_p(__typeof__(x), __typeof__(&*(x))), "Must not be a pointer"); (uint32_t) (sizeof(x) / sizeof(*(x))); })
+    #endif
+#endif
+#ifndef ARRAY_SIZE
+    #define ARRAY_SIZE(x) ((uint32_t) (sizeof(x) / sizeof(*(x))))
+#endif
+
 
 typedef struct FFconfig
 {
@@ -35,7 +41,6 @@ typedef struct FFconfig
     FFOptionsDisplay display;
     FFOptionsGeneral general;
     FFOptionsModules modules;
-    FFOptionsLibrary library;
 } FFconfig;
 
 typedef struct FFstate
@@ -82,5 +87,3 @@ void ffLogoPrintLine();
 void ffLogoBuiltinPrint();
 void ffLogoBuiltinList();
 void ffLogoBuiltinListAutocompletion();
-
-#endif

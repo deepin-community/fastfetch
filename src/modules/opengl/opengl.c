@@ -4,8 +4,6 @@
 #include "modules/opengl/opengl.h"
 #include "util/stringUtils.h"
 
-#define FF_OPENGL_NUM_FORMAT_ARGS 5
-
 void ffPrintOpenGL(FFOpenGLOptions* options)
 {
     FFOpenGLResult result;
@@ -29,12 +27,12 @@ void ffPrintOpenGL(FFOpenGLOptions* options)
     }
     else
     {
-        FF_PRINT_FORMAT_CHECKED(FF_OPENGL_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_OPENGL_NUM_FORMAT_ARGS, ((FFformatarg[]) {
-            {FF_FORMAT_ARG_TYPE_STRBUF, &result.version, "version"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &result.renderer, "renderer"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &result.vendor, "vendor"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &result.slv, "slv"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &result.library, "library"},
+        FF_PRINT_FORMAT_CHECKED(FF_OPENGL_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, ((FFformatarg[]) {
+            FF_FORMAT_ARG(result.version, "version"),
+            FF_FORMAT_ARG(result.renderer, "renderer"),
+            FF_FORMAT_ARG(result.vendor, "vendor"),
+            FF_FORMAT_ARG(result.slv, "slv"),
+            FF_FORMAT_ARG(result.library, "library"),
         }));
     }
 
@@ -58,7 +56,6 @@ bool ffParseOpenGLCommandOptions(FFOpenGLOptions* options, const char* key, cons
             { "auto", FF_OPENGL_LIBRARY_AUTO },
             { "egl", FF_OPENGL_LIBRARY_EGL },
             { "glx", FF_OPENGL_LIBRARY_GLX },
-            { "osmesa", FF_OPENGL_LIBRARY_OSMESA },
             {}
         });
         return true;
@@ -87,7 +84,6 @@ void ffParseOpenGLJsonObject(FFOpenGLOptions* options, yyjson_val* module)
                 { "auto", FF_OPENGL_LIBRARY_AUTO },
                 { "egl", FF_OPENGL_LIBRARY_EGL },
                 { "glx", FF_OPENGL_LIBRARY_GLX },
-                { "osmesa", FF_OPENGL_LIBRARY_OSMESA },
                 {},
             });
             if (error)
@@ -120,9 +116,6 @@ void ffGenerateOpenGLJsonConfig(FFOpenGLOptions* options, yyjson_mut_doc* doc, y
             break;
         case FF_OPENGL_LIBRARY_GLX:
             yyjson_mut_obj_add_str(doc, module, "library", "glx");
-            break;
-        case FF_OPENGL_LIBRARY_OSMESA:
-            yyjson_mut_obj_add_str(doc, module, "library", "osmesa");
             break;
         }
     }
@@ -159,30 +152,26 @@ void ffGenerateOpenGLJsonResult(FF_MAYBE_UNUSED FFOpenGLOptions* options, yyjson
     ffStrbufDestroy(&result.library);
 }
 
-void ffPrintOpenGLHelpFormat(void)
-{
-    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_OPENGL_MODULE_NAME, "{1}", FF_OPENGL_NUM_FORMAT_ARGS, ((const char* []) {
-        "version - version",
-        "renderer - renderer",
-        "vendor - vendor",
-        "shading language version - slv",
-        "ogl library used - library",
-    }));
-}
+static FFModuleBaseInfo ffModuleInfo = {
+    .name = FF_OPENGL_MODULE_NAME,
+    .description = "Print highest OpenGL version supported by the GPU",
+    .parseCommandOptions = (void*) ffParseOpenGLCommandOptions,
+    .parseJsonObject = (void*) ffParseOpenGLJsonObject,
+    .printModule = (void*) ffPrintOpenGL,
+    .generateJsonResult = (void*) ffGenerateOpenGLJsonResult,
+    .generateJsonConfig = (void*) ffGenerateOpenGLJsonConfig,
+    .formatArgs = FF_FORMAT_ARG_LIST(((FFModuleFormatArg[]) {
+        {"OpenGL version", "version"},
+        {"OpenGL renderer", "renderer"},
+        {"OpenGL vendor", "vendor"},
+        {"OpenGL shading language version", "slv"},
+        {"OpenGL library used", "library"},
+    }))
+};
 
 void ffInitOpenGLOptions(FFOpenGLOptions* options)
 {
-    ffOptionInitModuleBaseInfo(
-        &options->moduleInfo,
-        FF_OPENGL_MODULE_NAME,
-        "Print highest OpenGL version supported by the GPU",
-        ffParseOpenGLCommandOptions,
-        ffParseOpenGLJsonObject,
-        ffPrintOpenGL,
-        ffGenerateOpenGLJsonResult,
-        ffPrintOpenGLHelpFormat,
-        ffGenerateOpenGLJsonConfig
-    );
+    options->moduleInfo = ffModuleInfo;
     ffOptionInitModuleArg(&options->moduleArgs, "");
 
     options->library = FF_OPENGL_LIBRARY_AUTO;

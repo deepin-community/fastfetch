@@ -7,10 +7,10 @@
 const char* ffDetectUptime(FFUptimeResult* result)
 {
     #ifndef __ANDROID__ // cat: /proc/uptime: Permission denied
-    
+
     // #620
     char buf[64];
-    ssize_t nRead = ffReadFileData("/proc/uptime", sizeof(buf) - 1, buf);
+    ssize_t nRead = ffReadFileData("/proc/uptime", ARRAY_SIZE(buf) - 1, buf);
     if(nRead > 0)
     {
         buf[nRead] = '\0';
@@ -20,7 +20,7 @@ const char* ffDetectUptime(FFUptimeResult* result)
         if(err != buf)
         {
             result->uptime = (uint64_t) (sec * 1000);
-            result->bootTime = ffTimeGetNow() + result->uptime;
+            result->bootTime = ffTimeGetNow() - result->uptime;
             return NULL;
         }
     }
@@ -32,7 +32,7 @@ const char* ffDetectUptime(FFUptimeResult* result)
         return "clock_gettime(CLOCK_BOOTTIME) failed";
 
     result->uptime = (uint64_t) uptime.tv_sec * 1000 + (uint64_t) uptime.tv_nsec / 1000000;
-    result->bootTime = ffTimeGetNow() + result->uptime;
+    result->bootTime = ffTimeGetNow() - result->uptime;
 
     return NULL;
 }

@@ -2,6 +2,8 @@
 #include "util/textModifier.h"
 #include "fastfetch.h"
 
+#include <stdlib.h>
+
 static void verify(const char* format, const char* arg, const char* expected, int lineNo)
 {
     FF_STRBUF_AUTO_DESTROY result = ffStrbufCreate();
@@ -69,11 +71,69 @@ int main(void)
     VERIFY("output({1n>20})", "12345 67890", "output({1n>20})");
     VERIFY("output({120})", "12345 67890", "output({120})");
     VERIFY("output({1:11})", "", "output()");
+    VERIFY("output({2:2})", "", "output({2:2})");
+    }
+
+    {
+    VERIFY("output({1~0})", "12345 67890", "output(12345 67890)");
+    VERIFY("output({1~1})", "12345 67890", "output(2345 67890)");
+    VERIFY("output({1~10})", "12345 67890", "output(0)");
+    VERIFY("output({1~20})", "12345 67890", "output()");
+    VERIFY("output({1~-5})", "12345 67890", "output(67890)");
+    VERIFY("output({1~-50})", "12345 67890", "output()");
+    VERIFY("output({1~0,1})", "12345 67890", "output(1)");
+    VERIFY("output({1~0,6})", "12345 67890", "output(12345 )");
+    VERIFY("output({1~0,10})", "12345 67890", "output(12345 6789)");
+    VERIFY("output({1~5,10})", "12345 67890", "output( 6789)");
+    VERIFY("output({1~5,100})", "12345 67890", "output( 67890)");
+    VERIFY("output({1~10,10})", "12345 67890", "output()");
+    VERIFY("output({1~10,5})", "12345 67890", "output()");
+    VERIFY("output({1~3,-3})", "12345 67890", "output(45 67)");
+    VERIFY("output({1~-5,-3})", "12345 67890", "output(67)");
+    VERIFY("output({1~-0,10})", "12345 67890", "output(12345 6789)");
+    VERIFY("output({1~-3,-5})", "12345 67890", "output()");
+    VERIFY("output({1~})", "12345 67890", "output(12345 67890)"); // Same as {1~0}
+    VERIFY("output({1~-0})", "12345 67890", "output(12345 67890)"); // Same as {1~0}
+    VERIFY("output({1~,-1})", "12345 67890", "output(12345 6789)"); // Same as {1~0,-1}
+    VERIFY("output({1~,})", "12345 67890", "output()"); // Same as {1~0,0}
+    }
+
+    {
+    VERIFY("output({1n~0})", "12345 67890", "output({1n~0})");
+    VERIFY("output({1~<0})", "12345 67890", "output({1~<0})");
+    VERIFY("output({1~-})", "12345 67890", "output({1~-})");
+    VERIFY("output({1~-,1})", "12345 67890", "output({1~-,1})");
+    VERIFY("output({1~0,,1})", "12345 67890", "output({1~0,,1})");
+    VERIFY("output({1~0,1,})", "12345 67890", "output({1~0,1,})");
+    VERIFY("output({1~,0,1})", "12345 67890", "output({1~,0,1})");
+    VERIFY("output({2,0})", "12345 67890", "output({2,0})");
     }
 
     {
     VERIFY("output({1:20}{1<20}{1>20})", "12345 67890", "output(12345 6789012345 67890                  12345 67890)");
+    VERIFY("output({?1}OK{?}{/1}NOT OK{/})", "12345 67890", "output(OK)");
+    VERIFY("output({?1}OK{?}{/1}NOT OK{/})", "", "output(NOT OK)");
     }
+
+    #ifndef _WIN32 // Windows doesn't have setenv
+    {
+        ffListInit(&instance.config.display.constants, sizeof(FFstrbuf));
+        ffStrbufInitStatic(ffListAdd(&instance.config.display.constants), "CONST1");
+        ffStrbufInitStatic(ffListAdd(&instance.config.display.constants), "CONST2");
+        setenv("FF_TEST", "ENVVAR", 1);
+        VERIFY("output({$FF_TEST})", "", "output(ENVVAR)");
+        VERIFY("output({$1})", "", "output(CONST1)");
+        VERIFY("output({$FF_TEST}{$1})", "", "output(ENVVARCONST1)");
+        VERIFY("output({$1}{$FF_TEST})", "", "output(CONST1ENVVAR)");
+        VERIFY("output({$FF_TEST}{$FF_TEST})", "", "output(ENVVARENVVAR)");
+        VERIFY("output({$1}{$-1})", "", "output(CONST1CONST2)");
+
+        VERIFY("output({$FF_INVAL})", "", "output({$FF_INVAL})");
+        VERIFY("output({$9}{$0}${-9})", "", "output({$9}{$0}${-9})");
+        VERIFY("output({$1NO})", "", "output({$1NO})");
+        ffListDestroy(&instance.config.display.constants);
+    }
+    #endif
 
     //Success
     puts("\033[32mAll tests passed!" FASTFETCH_TEXT_MODIFIER_RESET);

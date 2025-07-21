@@ -72,7 +72,7 @@ static void parseSize(FFstrbuf* result, uint64_t bytes, uint32_t base, const cha
     }
 
     if(counter == 0)
-        ffStrbufAppendF(result, "%"PRIu64" %s", bytes, prefixes[0]);
+        ffStrbufAppendF(result, "%" PRIu64 " %s", bytes, prefixes[0]);
     else
         ffStrbufAppendF(result, "%.*f %s", instance.config.display.sizeNdigits, size, prefixes[counter]);
 }
@@ -187,6 +187,54 @@ void ffParseGTK(FFstrbuf* buffer, const FFstrbuf* gtk2, const FFstrbuf* gtk3, co
     {
         ffStrbufAppend(buffer, gtk4);
         ffStrbufAppendS(buffer, " [GTK4]");
+    }
+}
+
+void ffParseDuration(uint32_t days, uint32_t hours, uint32_t minutes, uint32_t seconds, FFstrbuf* result)
+{
+    if(days == 0 && hours == 0 && minutes == 0)
+    {
+        ffStrbufAppendF(result, "%u seconds", seconds);
+        return;
+    }
+
+    if(seconds >= 30)
+    {
+        minutes++;
+        seconds = 0;
+    }
+
+    if(days > 0)
+    {
+        ffStrbufAppendF(result, "%u day", days);
+
+        if(days > 1)
+            ffStrbufAppendC(result, 's');
+
+        if(days >= 100)
+            ffStrbufAppendS(result, "(!)");
+
+        if(hours > 0 || minutes > 0)
+            ffStrbufAppendS(result, ", ");
+    }
+
+    if(hours > 0)
+    {
+        ffStrbufAppendF(result, "%u hour", hours);
+
+        if(hours > 1)
+            ffStrbufAppendC(result, 's');
+
+        if(minutes > 0)
+            ffStrbufAppendS(result, ", ");
+    }
+
+    if(minutes > 0)
+    {
+        ffStrbufAppendF(result, "%u min", minutes);
+
+        if(minutes > 1)
+            ffStrbufAppendC(result, 's');
     }
 }
 

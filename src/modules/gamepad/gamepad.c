@@ -5,17 +5,26 @@
 #include "modules/gamepad/gamepad.h"
 #include "util/stringUtils.h"
 
-#define FF_GAMEPAD_NUM_FORMAT_ARGS 4
-
 static void printDevice(FFGamepadOptions* options, const FFGamepadDevice* device, uint8_t index)
 {
+    FFPercentageTypeFlags percentType = options->percent.type == 0 ? instance.config.display.percentType : options->percent.type;
     if(options->moduleArgs.outputFormat.length == 0)
     {
         ffPrintLogoAndKey(FF_GAMEPAD_MODULE_NAME, index, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT);
 
-        FF_STRBUF_AUTO_DESTROY buffer = ffStrbufCreateCopy(&device->name);
+        FF_STRBUF_AUTO_DESTROY buffer = ffStrbufCreate();
+        bool showBatteryLevel = device->battery > 0 && device->battery <= 100;
 
-        if (device->battery > 0 && device->battery <= 100)
+        if (showBatteryLevel && (percentType & FF_PERCENTAGE_TYPE_BAR_BIT))
+        {
+            ffPercentAppendBar(&buffer, device->battery, options->percent, &options->moduleArgs);
+            ffStrbufAppendC(&buffer, ' ');
+        }
+
+        if (!(percentType & FF_PERCENTAGE_TYPE_HIDE_OTHERS_BIT))
+            ffStrbufAppend(&buffer, &device->name);
+
+        if (showBatteryLevel && (percentType & FF_PERCENTAGE_TYPE_NUM_BIT))
         {
             if (buffer.length)
                 ffStrbufAppendC(&buffer, ' ');
@@ -26,15 +35,17 @@ static void printDevice(FFGamepadOptions* options, const FFGamepadDevice* device
     else
     {
         FF_STRBUF_AUTO_DESTROY percentageNum = ffStrbufCreate();
-        ffPercentAppendNum(&percentageNum, device->battery, options->percent, false, &options->moduleArgs);
+        if (percentType & FF_PERCENTAGE_TYPE_NUM_BIT)
+            ffPercentAppendNum(&percentageNum, device->battery, options->percent, false, &options->moduleArgs);
         FF_STRBUF_AUTO_DESTROY percentageBar = ffStrbufCreate();
-        ffPercentAppendBar(&percentageBar, device->battery, options->percent, &options->moduleArgs);
+        if (percentType & FF_PERCENTAGE_TYPE_BAR_BIT)
+            ffPercentAppendBar(&percentageBar, device->battery, options->percent, &options->moduleArgs);
 
-        FF_PRINT_FORMAT_CHECKED(FF_GAMEPAD_MODULE_NAME, index, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_GAMEPAD_NUM_FORMAT_ARGS, ((FFformatarg[]) {
-            {FF_FORMAT_ARG_TYPE_STRBUF, &device->name, "name"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &device->serial, "serial"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &percentageNum, "battery-percentage"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &percentageBar, "battery-percentage-bar"},
+        FF_PRINT_FORMAT_CHECKED(FF_GAMEPAD_MODULE_NAME, index, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, ((FFformatarg[]) {
+            FF_FORMAT_ARG(device->name, "name"),
+            FF_FORMAT_ARG(device->serial, "serial"),
+            FF_FORMAT_ARG(percentageNum, "battery-percentage"),
+            FF_FORMAT_ARG(percentageBar, "battery-percentage-bar"),
         }));
     }
 }
@@ -136,31 +147,27 @@ void ffGenerateGamepadJsonResult(FF_MAYBE_UNUSED FFGamepadOptions* options, yyjs
     }
 }
 
-void ffPrintGamepadHelpFormat(void)
-{
-    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_GAMEPAD_MODULE_NAME, "{1} ({3})", FF_GAMEPAD_NUM_FORMAT_ARGS, ((const char* []) {
-        "Name - name",
-        "Serial number - serial",
-        "Battery percentage num - battery-percentage",
-        "Battery percentage bar - battery-percentage-bar",
-    }));
-}
+static FFModuleBaseInfo ffModuleInfo = {
+    .name = FF_GAMEPAD_MODULE_NAME,
+    .description = "List (connected) gamepads",
+    .parseCommandOptions = (void*) ffParseGamepadCommandOptions,
+    .parseJsonObject = (void*) ffParseGamepadJsonObject,
+    .printModule = (void*) ffPrintGamepad,
+    .generateJsonResult = (void*) ffGenerateGamepadJsonResult,
+    .generateJsonConfig = (void*) ffGenerateGamepadJsonConfig,
+    .formatArgs = FF_FORMAT_ARG_LIST(((FFModuleFormatArg[]) {
+        {"Name", "name"},
+        {"Serial number", "serial"},
+        {"Battery percentage num", "battery-percentage"},
+        {"Battery percentage bar", "battery-percentage-bar"},
+    }))
+};
 
 void ffInitGamepadOptions(FFGamepadOptions* options)
 {
-    ffOptionInitModuleBaseInfo(
-        &options->moduleInfo,
-        FF_GAMEPAD_MODULE_NAME,
-        "List connected gamepads",
-        ffParseGamepadCommandOptions,
-        ffParseGamepadJsonObject,
-        ffPrintGamepad,
-        ffGenerateGamepadJsonResult,
-        ffPrintGamepadHelpFormat,
-        ffGenerateGamepadJsonConfig
-    );
+    options->moduleInfo = ffModuleInfo;
     ffOptionInitModuleArg(&options->moduleArgs, "󰺵");
-    options->percent = (FFColorRangeConfig) { 50, 20 };
+    options->percent = (FFPercentageModuleConfig) { 50, 20, 0 };
 }
 
 void ffDestroyGamepadOptions(FFGamepadOptions* options)

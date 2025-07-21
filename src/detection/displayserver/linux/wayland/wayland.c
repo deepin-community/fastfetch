@@ -1,5 +1,6 @@
 #include "../displayserver_linux.h"
 #include "common/io/io.h"
+#include "util/edidHelper.h"
 #include "util/stringUtils.h"
 
 #include <stdlib.h>
@@ -17,11 +18,19 @@
 #include "kde-output-order-v1-client-protocol.h"
 #include "xdg-output-unstable-v1-client-protocol.h"
 
-#ifdef __linux__
+#if __FreeBSD__
+#include <sys/un.h>
+#include <sys/ucred.h>
+#include <sys/sysctl.h>
+#endif
+
 static bool waylandDetectWM(int fd, FFDisplayServerResult* result)
 {
-    struct ucred ucred;
-    socklen_t len = sizeof(struct ucred);
+#if __linux__ || (__FreeBSD__ && !__DragonFly__)
+
+#if __linux
+    struct ucred ucred = {};
+    socklen_t len = sizeof(ucred);
     if (getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &ucred, &len) == -1 || ucred.pid <= 0)
         return false;
 
@@ -29,6 +38,19 @@ static bool waylandDetectWM(int fd, FFDisplayServerResult* result)
     ffStrbufAppendF(&procPath, "/proc/%d/cmdline", ucred.pid); //We check the cmdline for the process name, because it is not trimmed.
     if (!ffReadFileBuffer(procPath.chars, &result->wmProcessName))
         return false;
+#else
+    struct xucred ucred = {};
+    socklen_t len = sizeof(ucred);
+    if (getsockopt(fd, AF_UNSPEC, LOCAL_PEERCRED, &ucred, &len) == -1 || ucred.cr_pid <= 0)
+        return false;
+
+    size_t size = 4096;
+    ffStrbufEnsureFixedLengthFree(&result->wmProcessName, (uint32_t) size);
+
+    if(sysctl((int[]){CTL_KERN, KERN_PROC, KERN_PROC_ARGS, ucred.cr_pid}, 4, result->wmProcessName.chars, &size, NULL, 0 ) != 0)
+        return false;
+    result->wmProcessName.length = (uint32_t) size - 1;
+#endif
 
     // #1135: wl-restart is a special case
     const char* filename = strrchr(result->wmProcessName.chars, '/');
@@ -38,20 +60,18 @@ static bool waylandDetectWM(int fd, FFDisplayServerResult* result)
         filename = result->wmProcessName.chars;
 
     if (ffStrEquals(filename, "wl-restart"))
-        ffStrbufSubstrAfterFirstC(&result->wmProcessName, '\0');
+        ffStrbufSubstrAfterLastC(&result->wmProcessName, '\0');
 
     ffStrbufSubstrBeforeFirstC(&result->wmProcessName, '\0'); //Trim the arguments
     ffStrbufSubstrAfterLastC(&result->wmProcessName, '/'); //Trim the path
 
     return true;
-}
+
 #else
-static bool waylandDetectWM(int fd, FFDisplayServerResult* result)
-{
     FF_UNUSED(fd, result);
     return false;
-}
 #endif
+}
 
 static void waylandGlobalAddListener(void* data, struct wl_registry* registry, uint32_t name, const char* interface, uint32_t version)
 {
@@ -60,17 +80,20 @@ static void waylandGlobalAddListener(void* data, struct wl_registry* registry, u
     if((wldata->protocolType == FF_WAYLAND_PROTOCOL_TYPE_NONE || wldata->protocolType == FF_WAYLAND_PROTOCOL_TYPE_GLOBAL) && ffStrEquals(interface, wldata->ffwl_output_interface->name))
     {
         wldata->protocolType = FF_WAYLAND_PROTOCOL_TYPE_GLOBAL;
-        ffWaylandHandleGlobalOutput(wldata, registry, name, version);
+        if (ffWaylandHandleGlobalOutput(wldata, registry, name, version) != NULL)
+            wldata->protocolType = FF_WAYLAND_PROTOCOL_TYPE_NONE;
     }
     else if((wldata->protocolType == FF_WAYLAND_PROTOCOL_TYPE_NONE || wldata->protocolType == FF_WAYLAND_PROTOCOL_TYPE_ZWLR) && ffStrEquals(interface, zwlr_output_manager_v1_interface.name))
     {
         wldata->protocolType = FF_WAYLAND_PROTOCOL_TYPE_ZWLR;
-        ffWaylandHandleZwlrOutput(wldata, registry, name, version);
+        if (ffWaylandHandleZwlrOutput(wldata, registry, name, version) != NULL)
+            wldata->protocolType = FF_WAYLAND_PROTOCOL_TYPE_NONE;
     }
     else if((wldata->protocolType == FF_WAYLAND_PROTOCOL_TYPE_NONE || wldata->protocolType == FF_WAYLAND_PROTOCOL_TYPE_KDE) && ffStrEquals(interface, kde_output_device_v2_interface.name))
     {
         wldata->protocolType = FF_WAYLAND_PROTOCOL_TYPE_KDE;
-        ffWaylandHandleKdeOutput(wldata, registry, name, version);
+        if (ffWaylandHandleKdeOutput(wldata, registry, name, version) != NULL)
+            wldata->protocolType = FF_WAYLAND_PROTOCOL_TYPE_NONE;
     }
     else if(ffStrEquals(interface, kde_output_order_v1_interface.name))
     {
@@ -82,14 +105,56 @@ static void waylandGlobalAddListener(void* data, struct wl_registry* registry, u
     }
 }
 
+static FF_MAYBE_UNUSED bool matchDrmConnector(const char* connName, WaylandDisplay* wldata)
+{
+    // https://wayland.freedesktop.org/docs/html/apa.html#protocol-spec-wl_output-event-name
+    // The doc says that "do not assume that the name is a reflection of an underlying DRM connector, X11 connection, etc."
+    // However I can't find a better method to get the edid data
+    const char* drmDirPath = "/sys/class/drm/";
+
+    FF_AUTO_CLOSE_DIR DIR* dirp = opendir(drmDirPath);
+    if(dirp == NULL)
+        return false;
+
+    struct dirent* entry;
+    while((entry = readdir(dirp)) != NULL)
+    {
+        const char* plainName = entry->d_name;
+        if (ffStrStartsWith(plainName, "card"))
+        {
+            const char* tmp = strchr(plainName + strlen("card"), '-');
+            if (tmp) plainName = tmp + 1;
+        }
+        if (ffStrEquals(plainName, connName))
+        {
+            FF_STRBUF_AUTO_DESTROY path = ffStrbufCreateF("%s%s/edid", drmDirPath, entry->d_name);
+
+            uint8_t edidData[512];
+            ssize_t edidLength = ffReadFileData(path.chars, ARRAY_SIZE(edidData), edidData);
+            if (edidLength > 0 && edidLength % 128 == 0)
+            {
+                ffEdidGetName(edidData, &wldata->edidName);
+                ffEdidGetHdrCompatible(edidData, (uint32_t) edidLength);
+                ffEdidGetSerialAndManufactureDate(edidData, &wldata->serial, &wldata->myear, &wldata->mweek);
+                wldata->hdrInfoAvailable = true;
+                return true;
+            }
+            break;
+        }
+    }
+    return false;
+}
+
 void ffWaylandOutputNameListener(void* data, FF_MAYBE_UNUSED void* output, const char *name)
 {
     WaylandDisplay* display = data;
     if (display->id) return;
 
     display->type = ffdsGetDisplayType(name);
+    #if __linux__
     if (!display->edidName.length)
-        ffdsMatchDrmConnector(name, &display->edidName);
+        matchDrmConnector(name, display);
+    #endif
     display->id = ffWaylandGenerateIdFromName(name);
     ffStrbufAppendS(&display->name, name);
 }
@@ -150,7 +215,7 @@ const char* ffdsConnectWayland(FFDisplayServerResult* result)
     if (getenv("XDG_RUNTIME_DIR") == NULL)
         return "Wayland requires $XDG_RUNTIME_DIR being set";
 
-    FF_LIBRARY_LOAD(wayland, &instance.config.library.libWayland, false, "libwayland-client" FF_LIBRARY_EXTENSION, 1)
+    FF_LIBRARY_LOAD(wayland, false, "libwayland-client" FF_LIBRARY_EXTENSION, 1)
 
     FF_LIBRARY_LOAD_SYMBOL_MESSAGE(wayland, wl_display_connect)
     FF_LIBRARY_LOAD_SYMBOL_MESSAGE(wayland, wl_display_get_fd)
@@ -208,7 +273,7 @@ const char* ffdsConnectWayland(FFDisplayServerResult* result)
             FF_LIST_FOR_EACH(FFstrbuf, basePath, instance.state.platform.configDirs)
             {
                 char path[1024];
-                snprintf(path, sizeof(path) - 1, "%s%s", basePath->chars, fileName);
+                snprintf(path, ARRAY_SIZE(path), "%s%s", basePath->chars, fileName);
                 if (ffReadFileBuffer(path, &monitorsXml))
                     break;
             }

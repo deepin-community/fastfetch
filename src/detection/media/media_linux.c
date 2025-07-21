@@ -8,7 +8,6 @@
 
 #ifdef FF_HAVE_DBUS
 #include "common/dbus.h"
-#include "common/library.h"
 
 #define FF_DBUS_ITER_CONTINUE(dbus, iterator) \
     { \
@@ -17,35 +16,22 @@
         continue; \
     }
 
-static bool getBusProperties(FFDBusData* data, const char* busName, FFMediaResult* result)
+static bool parseMprisMetadata(FFDBusData* data, DBusMessageIter* rootIterator, FFMediaResult* result)
 {
-    DBusMessage* reply = ffDBusGetProperty(data, busName, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player", "Metadata");
-    if(reply == NULL)
-        return false;
-
-    DBusMessageIter rootIterator;
-    if(!data->lib->ffdbus_message_iter_init(reply, &rootIterator))
-    {
-        data->lib->ffdbus_message_unref(reply);
-        return false;
-    }
-
-    if(data->lib->ffdbus_message_iter_get_arg_type(&rootIterator) != DBUS_TYPE_VARIANT)
-    {
-        data->lib->ffdbus_message_unref(reply);
-        return false;
-    }
-
-    DBusMessageIter variantIterator;
-    data->lib->ffdbus_message_iter_recurse(&rootIterator, &variantIterator);
-    if(data->lib->ffdbus_message_iter_get_arg_type(&variantIterator) != DBUS_TYPE_ARRAY)
-    {
-        data->lib->ffdbus_message_unref(reply);
-        return false;
-    }
-
     DBusMessageIter arrayIterator;
-    data->lib->ffdbus_message_iter_recurse(&variantIterator, &arrayIterator);
+
+    if (data->lib->ffdbus_message_iter_get_arg_type(rootIterator) == DBUS_TYPE_VARIANT)
+    {
+        DBusMessageIter variantIterator;
+        data->lib->ffdbus_message_iter_recurse(rootIterator, &variantIterator);
+        if(data->lib->ffdbus_message_iter_get_arg_type(&variantIterator) != DBUS_TYPE_ARRAY)
+            return false;
+        data->lib->ffdbus_message_iter_recurse(&variantIterator, &arrayIterator);
+    }
+    else
+    {
+        data->lib->ffdbus_message_iter_recurse(rootIterator, &arrayIterator);
+    }
 
     while(true)
     {
@@ -66,13 +52,17 @@ static bool getBusProperties(FFDBusData* data, const char* busName, FFMediaResul
 
         data->lib->ffdbus_message_iter_next(&dictIterator);
 
-        if(ffStrEquals(key, "xesam:title"))
+        if(!ffStrStartsWith(key, "xesam:"))
+            FF_DBUS_ITER_CONTINUE(data, &arrayIterator)
+
+        key += strlen("xesam:");
+        if(ffStrEquals(key, "title"))
             ffDBusGetString(data, &dictIterator, &result->song);
-        else if(ffStrEquals(key, "xesam:album"))
+        else if(ffStrEquals(key, "album"))
             ffDBusGetString(data, &dictIterator, &result->album);
-        else if(ffStrEquals(key, "xesam:artist"))
+        else if(ffStrEquals(key, "artist"))
             ffDBusGetString(data, &dictIterator, &result->artist);
-        else if(ffStrEquals(key, "xesam:url"))
+        else if(ffStrEquals(key, "url"))
             ffDBusGetString(data, &dictIterator, &result->url);
 
         if(result->song.length > 0 && result->artist.length > 0 && result->album.length > 0 && result->url.length > 0)
@@ -81,27 +71,100 @@ static bool getBusProperties(FFDBusData* data, const char* busName, FFMediaResul
         FF_DBUS_ITER_CONTINUE(data, &arrayIterator)
     }
 
-    data->lib->ffdbus_message_unref(reply);
+    return true;
+}
 
-    if(result->song.length == 0)
+static bool getBusProperties(FFDBusData* data, const char* busName, FFMediaResult* result)
+{
+    // Get all properties at once to reduce the number of IPCs
+    DBusMessage* reply = ffDBusGetAllProperties(data, busName, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player");
+    if(reply == NULL)
+        return false;
+
+    DBusMessageIter rootIterator;
+    if(!data->lib->ffdbus_message_iter_init(reply, &rootIterator) &&
+        data->lib->ffdbus_message_iter_get_arg_type(&rootIterator) != DBUS_TYPE_ARRAY)
     {
-        ffStrbufClear(&result->artist);
-        ffStrbufClear(&result->album);
-        ffStrbufClear(&result->url);
+        data->lib->ffdbus_message_unref(reply);
         return false;
     }
 
-    ffDBusGetPropertyString(data, busName, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player", "PlaybackStatus", &result->status);
+    DBusMessageIter arrayIterator;
+    data->lib->ffdbus_message_iter_recurse(&rootIterator, &arrayIterator);
+
+    while(true)
+    {
+        if(data->lib->ffdbus_message_iter_get_arg_type(&arrayIterator) != DBUS_TYPE_DICT_ENTRY)
+            FF_DBUS_ITER_CONTINUE(data, &arrayIterator)
+
+        DBusMessageIter dictIterator;
+        data->lib->ffdbus_message_iter_recurse(&arrayIterator, &dictIterator);
+
+        const char* key;
+        data->lib->ffdbus_message_iter_get_basic(&dictIterator, &key);
+
+        data->lib->ffdbus_message_iter_next(&dictIterator);
+
+        if(ffStrEquals(key, "Metadata"))
+            parseMprisMetadata(data, &dictIterator, result);
+        else if(ffStrEquals(key, "PlaybackStatus"))
+            ffDBusGetString(data, &dictIterator, &result->status);
+
+        FF_DBUS_ITER_CONTINUE(data, &arrayIterator)
+    }
+
+    if(result->song.length == 0)
+    {
+        if(result->url.length)
+        {
+            const char* fileName = memrchr(result->url.chars, '/', result->url.length);
+            assert(fileName);
+            ++fileName;
+            ffStrbufEnsureFixedLengthFree(&result->song, result->url.length - (uint32_t) (fileName - result->url.chars));
+            for(; *fileName && *fileName != '?'; ++fileName)
+            {
+                if (*fileName != '%')
+                {
+                    ffStrbufAppendC(&result->song, *fileName);
+                }
+                else
+                {
+                    if (fileName[1] == 0 || fileName[2] == 0)
+                        break;
+                    char str[] = { fileName[1], fileName[2], 0 };
+                    ffStrbufAppendC(&result->song, (char) strtoul(str, NULL, 16));
+                    fileName += 2;
+                }
+            }
+        }
+        else
+        {
+            ffStrbufClear(&result->artist);
+            ffStrbufClear(&result->album);
+            ffStrbufClear(&result->url);
+            return false;
+        }
+    }
 
     //Set short bus name
     ffStrbufAppendS(&result->playerId, busName + sizeof(FF_DBUS_MPRIS_PREFIX) - 1);
 
     //We found a song, get the player name
-    ffDBusGetPropertyString(data, busName, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2", "Identity", &result->player);
-    if(result->player.length == 0)
-        ffDBusGetPropertyString(data, busName, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2", "DesktopEntry", &result->player);
-    if(result->player.length == 0)
-        ffStrbufAppend(&result->player, &result->playerId);
+    if (ffStrbufStartsWithS(&result->playerId, "musikcube.instance"))
+    {
+        // dbus calls are EXTREMELY slow on musikcube, so we set the player name manually
+        ffStrbufSetStatic(&result->player, "musikcube");
+    }
+    else
+    {
+        ffDBusGetPropertyString(data, busName, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2", "Identity", &result->player);
+        if(result->player.length == 0)
+            ffDBusGetPropertyString(data, busName, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2", "DesktopEntry", &result->player);
+        if(result->player.length == 0)
+            ffStrbufAppend(&result->player, &result->playerId);
+    }
+
+    data->lib->ffdbus_message_unref(reply);
 
     return true;
 }
@@ -122,9 +185,9 @@ static void getCustomBus(FFDBusData* data, const FFstrbuf* playerName, FFMediaRe
 static void getBestBus(FFDBusData* data, FFMediaResult* result)
 {
     if(
-        getBusProperties(data, FF_DBUS_MPRIS_PREFIX"spotify", result) ||
-        getBusProperties(data, FF_DBUS_MPRIS_PREFIX"vlc", result) ||
-        getBusProperties(data, FF_DBUS_MPRIS_PREFIX"plasma-browser-integration", result)
+        getBusProperties(data, FF_DBUS_MPRIS_PREFIX "spotify", result) ||
+        getBusProperties(data, FF_DBUS_MPRIS_PREFIX "vlc", result) ||
+        getBusProperties(data, FF_DBUS_MPRIS_PREFIX "plasma-browser-integration", result)
     ) return;
 
     DBusMessage* reply = ffDBusGetMethodReply(data, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "ListNames", NULL);

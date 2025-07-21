@@ -18,7 +18,7 @@ static inline bool allValuesSet(const FFQtResult* result)
         result->wallpaper.length > 0;
 }
 
-typedef enum PlasmaCategory
+typedef enum __attribute__((__packed__)) PlasmaCategory
 {
     PLASMA_CATEGORY_GENERAL,
     PLASMA_CATEGORY_KDE,
@@ -74,8 +74,7 @@ static bool detectPlasmaFromFile(const char* filename, FFQtResult* result)
         }
     }
 
-    if(line != NULL)
-        free(line);
+    free(line);
 
     fclose(kdeglobals);
 

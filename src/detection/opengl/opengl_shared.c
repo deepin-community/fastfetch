@@ -3,7 +3,7 @@
 
 #if __has_include(<GL/gl.h>)
 #include <GL/gl.h>
-#elif __has_include(<OpenGL/gl.h>)
+#elif __APPLE__
 #define GL_SILENCE_DEPRECATION 1
 #include <OpenGL/gl.h>
 #else
@@ -27,7 +27,10 @@ void ffOpenGLHandleResult(FFOpenGLResult* result, __typeof__(&glGetString) ffglG
 #if defined(FF_HAVE_EGL) || __has_include(<EGL/egl.h>)
 #include "common/io/io.h"
 
+#define EGL_EGL_PROTOTYPES 1
+#define EGL_EGLEXT_PROTOTYPES 1
 #include <EGL/egl.h>
+#include <EGL/eglext.h>
 
 typedef struct EGLData
 {
@@ -61,9 +64,14 @@ static const char* eglHandleContext(FFOpenGLResult* result, EGLData* data)
     return NULL;
 }
 
-static const char* eglHandleSurface(FFOpenGLResult* result, EGLData* data)
+static const char* eglHandleSurface(FFOpenGLResult* result, EGLData* data, bool gles)
 {
-    data->context = data->ffeglCreateContext(data->display, data->config, EGL_NO_CONTEXT, (EGLint[]){EGL_NONE});
+    data->context = data->ffeglCreateContext(data->display, data->config, EGL_NO_CONTEXT, (EGLint[]){
+        EGL_CONTEXT_CLIENT_VERSION, gles ? 2 : 1, // Try GLES 2.0+ first
+        EGL_NONE
+    });
+    if(data->context == EGL_NO_CONTEXT && gles) // Some ANGLE builds support GLES 1.1 only
+        data->context = data->ffeglCreateContext(data->display, data->config, EGL_NO_CONTEXT, (EGLint[]){EGL_NONE});
     if(data->context == EGL_NO_CONTEXT)
         return "eglCreateContext returned EGL_NO_CONTEXT";
 
@@ -74,17 +82,12 @@ static const char* eglHandleSurface(FFOpenGLResult* result, EGLData* data)
 
 static const char* eglHandleDisplay(FFOpenGLResult* result, EGLData* data)
 {
-    if(data->ffeglBindAPI(
-        #ifdef _WIN32
-        EGL_OPENGL_ES_API
-        #else
-        EGL_OPENGL_API
-        #endif
-    ) != EGL_TRUE)
-        return "eglBindAPI returned EGL_FALSE";
+    // try use OpenGL API. If failed, use the default API (usually OpenGL ES)
+    bool gles = !data->ffeglBindAPI(EGL_OPENGL_API);
 
     EGLint eglConfigCount;
     data->ffeglGetConfigs(data->display, &data->config, 1, &eglConfigCount);
+
     if(eglConfigCount == 0)
         return "eglGetConfigs returned 0 configs";
 
@@ -97,7 +100,7 @@ static const char* eglHandleDisplay(FFOpenGLResult* result, EGLData* data)
     if(data->surface == EGL_NO_SURFACE)
         return "eglCreatePbufferSurface returned EGL_NO_SURFACE";
 
-    const char* error = eglHandleSurface(result, data);
+    const char* error = eglHandleSurface(result, data, gles);
     data->ffeglDestroySurface(data->display, data->surface);
     return error;
 }
@@ -108,9 +111,20 @@ static const char* eglHandleData(FFOpenGLResult* result, EGLData* data)
     if(!data->ffglGetString)
         return "eglGetProcAddress(glGetString) returned NULL";
 
-    data->display = data->ffeglGetDisplay(EGL_DEFAULT_DISPLAY);
-    if(data->display == EGL_NO_DISPLAY)
-        return "eglGetDisplay returned EGL_NO_DISPLAY";
+    #if EGL_VERSION_1_5
+    PFNEGLGETPLATFORMDISPLAYEXTPROC ffeglGetPlatformDisplay = (PFNEGLGETPLATFORMDISPLAYEXTPROC) data->ffeglGetProcAddress("eglGetPlatformDisplay");
+    if (ffeglGetPlatformDisplay)
+        data->display = ffeglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, NULL, NULL);
+
+    if(!ffeglGetPlatformDisplay || data->display == EGL_NO_DISPLAY)
+    #endif
+
+    {
+        data->display = data->ffeglGetDisplay(EGL_DEFAULT_DISPLAY);
+        if(data->display == EGL_NO_DISPLAY)
+            return "eglGetDisplay returned EGL_NO_DISPLAY";
+    }
+
 
     EGLint major, minor;
     if(data->ffeglInitialize(data->display, &major, &minor) == EGL_FALSE)
@@ -121,11 +135,12 @@ static const char* eglHandleData(FFOpenGLResult* result, EGLData* data)
     return error;
 }
 
+
 const char* ffOpenGLDetectByEGL(FFOpenGLResult* result)
 {
     EGLData eglData;
 
-    FF_LIBRARY_LOAD(egl, &instance.config.library.libEGL, "dlopen egl failed", "libEGL" FF_LIBRARY_EXTENSION, 1);
+    FF_LIBRARY_LOAD(egl, "dlopen libEGL" FF_LIBRARY_EXTENSION " failed", "libEGL" FF_LIBRARY_EXTENSION, 1);
     FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(egl, eglData, eglGetProcAddress);
     FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(egl, eglData, eglGetDisplay);
     FF_LIBRARY_LOAD_SYMBOL_VAR_MESSAGE(egl, eglData, eglQueryString);

@@ -8,12 +8,19 @@
 #include <string.h>
 #include <unistd.h>
 
-#ifdef __FreeBSD__
+#if __FreeBSD__
     #include <sys/sysctl.h>
     #include <sys/types.h>
     #include <sys/user.h>
-#elif defined(__sun)
+#elif __OpenBSD__
+    #include <sys/param.h>
+    #include <sys/sysctl.h>
+    #include <kvm.h>
+#elif __sun
     #include <procfs.h>
+#elif __NetBSD__
+    #include <sys/types.h>
+    #include <sys/sysctl.h>
 #endif
 
 static const char* parseEnv(void)
@@ -54,6 +61,9 @@ static const char* parseEnv(void)
 
     if(getenv("HYPRLAND_CMD") != NULL)
         return "Hyprland";
+
+    if(getenv("SWAYSOCK") != NULL)
+        return "Sway";
 
     #ifdef __linux__
     if(
@@ -119,8 +129,14 @@ static void applyPrettyNameIfWM(FFDisplayServerResult* result, const char* name)
         ffStrbufSetS(&result->wmPrettyName, FF_WM_PRETTY_ICEWM);
     else if(ffStrEqualsIgnCase(name, "dtwm"))
         ffStrbufSetS(&result->wmPrettyName, FF_WM_PRETTY_DTWM);
+    else if(ffStrEqualsIgnCase(name, "fvwm"))
+        ffStrbufSetS(&result->wmPrettyName, FF_WM_PRETTY_FVWM);
+    else if(ffStrEqualsIgnCase(name, "ctwm"))
+        ffStrbufSetS(&result->wmPrettyName, FF_WM_PRETTY_CTWM);
     else if(ffStrEqualsIgnCase(name, "hyprland"))
         ffStrbufSetS(&result->wmPrettyName, FF_WM_PRETTY_HYPRLAND);
+    else if(ffStrEqualsIgnCase(name, "ratpoison"))
+        ffStrbufSetS(&result->wmPrettyName, FF_WM_PRETTY_RATPOISON);
 }
 
 static void applyNameIfWM(FFDisplayServerResult* result, const char* processName)
@@ -252,15 +268,19 @@ static const char* getFromProcesses(FFDisplayServerResult* result)
 {
     uint32_t userId = getuid();
 
-#ifdef __FreeBSD__
+#if __FreeBSD__
+    #ifdef __DragonFly__
+        #define ki_comm kp_comm
+    #endif
+
     int request[] = {CTL_KERN, KERN_PROC, KERN_PROC_UID, (int) userId};
     size_t length = 0;
 
-    if(sysctl(request, sizeof(request) / sizeof(*request), NULL, &length, NULL, 0) != 0)
+    if(sysctl(request, ARRAY_SIZE(request), NULL, &length, NULL, 0) != 0)
         return "sysctl({CTL_KERN, KERN_PROC, KERN_PROC_UID}, NULL) failed";
 
     FF_AUTO_FREE struct kinfo_proc* procs = (struct kinfo_proc*) malloc(length);
-    if(sysctl(request, sizeof(request) / sizeof(*request), procs, &length, NULL, 0) != 0)
+    if(sysctl(request, ARRAY_SIZE(request), procs, &length, NULL, 0) != 0)
         return "sysctl({CTL_KERN, KERN_PROC, KERN_PROC_UID}, procs) failed";
 
     length /= sizeof(*procs);
@@ -276,7 +296,26 @@ static const char* getFromProcesses(FFDisplayServerResult* result)
         if(result->dePrettyName.length > 0 && result->wmPrettyName.length > 0)
             break;
     }
-#elif defined(__sun)
+#elif __OpenBSD__
+    kvm_t* kd = kvm_open(NULL, NULL, NULL, KVM_NO_FILES, NULL);
+    int count = 0;
+    const struct kinfo_proc* proc = kvm_getprocs(kd, KERN_PROC_UID, userId, sizeof(*proc), &count);
+    if (proc)
+    {
+        for (int i = 0; i < count; ++i)
+        {
+            if(result->dePrettyName.length == 0)
+                applyPrettyNameIfDE(result, proc[i].p_comm);
+
+            if(result->wmPrettyName.length == 0)
+                applyNameIfWM(result, proc[i].p_comm);
+
+            if(result->dePrettyName.length > 0 && result->wmPrettyName.length > 0)
+                break;
+        }
+    }
+    kvm_close(kd);
+#elif __sun
     FF_AUTO_CLOSE_DIR DIR* procdir = opendir("/proc");
     if(procdir == NULL)
         return "opendir(\"/proc\") failed";
@@ -312,7 +351,7 @@ static const char* getFromProcesses(FFDisplayServerResult* result)
                 break;
         }
     }
-#else
+#elif __linux__
     FF_AUTO_CLOSE_DIR DIR* procdir = opendir("/proc");
     if(procdir == NULL)
         return "opendir(\"/proc\") failed";
@@ -335,7 +374,7 @@ static const char* getFromProcesses(FFDisplayServerResult* result)
         ffStrbufAppendS(&procPath, dirent->d_name);
         uint32_t procFolderPathLength = procPath.length;
 
-        //Don't check for processes not owend by the current user.
+        //Don't check for processes not owned by the current user.
         ffStrbufAppendS(&procPath, "/loginuid");
         ffReadFileBuffer(procPath.chars, &loginuid);
         if(ffStrbufToUInt(&loginuid, (uint64_t) -1) != userId)
@@ -360,6 +399,29 @@ static const char* getFromProcesses(FFDisplayServerResult* result)
 
         if(result->wmPrettyName.length == 0)
             applyNameIfWM(result, processName.chars);
+
+        if(result->dePrettyName.length > 0 && result->wmPrettyName.length > 0)
+            break;
+    }
+#elif __NetBSD__
+    int request[] = {CTL_KERN, KERN_PROC2, KERN_PROC_UID, (int) userId, sizeof(struct kinfo_proc2), INT_MAX};
+
+    size_t size = 0;
+    if(sysctl(request, ARRAY_SIZE(request), NULL, &size, NULL, 0) != 0)
+        return "sysctl(KERN_PROC_UID, NULL) failed";
+
+    FF_AUTO_FREE struct kinfo_proc2* procs = malloc(size);
+
+    if(sysctl(request, ARRAY_SIZE(request), procs, &size, NULL, 0) != 0)
+        return "sysctl(KERN_PROC_UID, procs) failed";
+
+    for(struct kinfo_proc2* proc = procs; proc < procs + (size / sizeof(struct kinfo_proc2)); proc++)
+    {
+        if(result->dePrettyName.length == 0)
+            applyPrettyNameIfDE(result, proc->p_comm);
+
+        if(result->wmPrettyName.length == 0)
+            applyNameIfWM(result, proc->p_comm);
 
         if(result->dePrettyName.length > 0 && result->wmPrettyName.length > 0)
             break;

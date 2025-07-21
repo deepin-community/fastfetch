@@ -21,9 +21,9 @@ private:
 extern "C"
 const char* ffDetectCamera(FF_MAYBE_UNUSED FFlist* result)
 {
-    FF_LIBRARY_LOAD(mfplat, NULL, "dlopen mfplat" FF_LIBRARY_EXTENSION " failed", "mfplat" FF_LIBRARY_EXTENSION, 1)
+    FF_LIBRARY_LOAD(mfplat, "dlopen mfplat" FF_LIBRARY_EXTENSION " failed", "mfplat" FF_LIBRARY_EXTENSION, 1)
     FF_LIBRARY_LOAD_SYMBOL_MESSAGE(mfplat, MFCreateAttributes)
-    FF_LIBRARY_LOAD(mf, NULL, "dlopen mf" FF_LIBRARY_EXTENSION " failed", "mf" FF_LIBRARY_EXTENSION, 1)
+    FF_LIBRARY_LOAD(mf, "dlopen mf" FF_LIBRARY_EXTENSION " failed", "mf" FF_LIBRARY_EXTENSION, 1)
     FF_LIBRARY_LOAD_SYMBOL_MESSAGE(mf, MFEnumDeviceSources)
 
     const char* error = ffInitCom();
@@ -48,11 +48,11 @@ const char* ffDetectCamera(FF_MAYBE_UNUSED FFlist* result)
 
     for (uint32_t i = 0; i < count; i++)
     {
-        IMFActivate* device = devices[i];
+        IMFActivate* FF_AUTO_RELEASE_COM_OBJECT device = devices[i];
 
         wchar_t buffer[256];
         uint32_t length = 0;
-        if (FAILED(device->GetString(MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, buffer, sizeof(buffer), &length)) || length == 0)
+        if (FAILED(device->GetString(MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, buffer, ARRAY_SIZE(buffer), &length)) || length == 0)
             continue;
 
         FFCameraResult* camera = (FFCameraResult*) ffListAdd(result);
@@ -63,7 +63,7 @@ const char* ffDetectCamera(FF_MAYBE_UNUSED FFlist* result)
         camera->width = 0;
         camera->height = 0;
 
-        if (SUCCEEDED(device->GetString(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK, buffer, sizeof(buffer), &length)) && length > 0)
+        if (SUCCEEDED(device->GetString(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK, buffer, ARRAY_SIZE(buffer), &length)) && length > 0)
             ffStrbufSetNWS(&camera->id, length, buffer);
 
         IMFMediaSource* FF_AUTO_RELEASE_COM_OBJECT source = nullptr;
@@ -90,9 +90,11 @@ const char* ffDetectCamera(FF_MAYBE_UNUSED FFlist* result)
             continue;
 
         // Assume first type is the maximum resolution
-        IMFMediaType* FF_AUTO_RELEASE_COM_OBJECT type = NULL;
+        IMFMediaType* type = NULL;
         for (DWORD idx = 0; SUCCEEDED(handler->GetMediaTypeByIndex(idx, &type)); ++idx)
         {
+            on_scope_exit destroyType([=] { type->Release(); });
+
             GUID majorType;
             if (FAILED(type->GetMajorType(&majorType)) || majorType != MFMediaType_Video)
                 continue;
@@ -123,7 +125,7 @@ const char* ffDetectCamera(FF_MAYBE_UNUSED FFlist* result)
         }
     }
 
-    CoTaskMemFree(devices);
+    if (devices) CoTaskMemFree(devices);
 
     return nullptr;
 }
