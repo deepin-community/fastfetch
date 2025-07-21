@@ -1,7 +1,7 @@
 #include "fastfetch.h"
 #include "battery.h"
 #include "util/apple/cf_helpers.h"
-#include "detection/temps/temps_apple.h"
+#include "util/apple/smc_temps.h"
 
 #include <IOKit/IOKitLib.h>
 #include <IOKit/pwr_mgt/IOPM.h>
@@ -57,13 +57,24 @@ const char* ffDetectBattery(FFBatteryOptions* options, FFlist* results)
         ffCfDictGetInt(properties, CFSTR(kIOPMPSCycleCountKey), &cycleCount);
         battery->cycleCount = cycleCount < 0 ? 0 : (uint32_t) cycleCount;
 
-        if (!ffCfDictGetBool(properties, CFSTR(kIOPMPSExternalConnectedKey), &boolValue) && boolValue)
-            ffStrbufAppendS(&battery->status, "AC connected, ");
-        else
-            ffStrbufAppendS(&battery->status, "Discharging, ");
-        if (!ffCfDictGetBool(properties, CFSTR(kIOPMPSIsChargingKey), &boolValue) && boolValue)
+        battery->timeRemaining = -1;
+        if (ffCfDictGetBool(properties, CFSTR(kIOPMPSExternalConnectedKey), &boolValue) == NULL)
+        {
+            if (boolValue)
+                ffStrbufAppendS(&battery->status, "AC connected, ");
+            else
+            {
+                ffStrbufAppendS(&battery->status, "Discharging, ");
+                ffCfDictGetInt(properties, CFSTR("AvgTimeToEmpty"), &battery->timeRemaining); // in minutes
+                if (battery->timeRemaining < 0 || battery->timeRemaining >= 0xFFFF)
+                    battery->timeRemaining = -1;
+                else
+                    battery->timeRemaining *= 60;
+            }
+        }
+        if (ffCfDictGetBool(properties, CFSTR(kIOPMPSIsChargingKey), &boolValue) == NULL && boolValue)
             ffStrbufAppendS(&battery->status, "Charging, ");
-        if (!ffCfDictGetBool(properties, CFSTR(kIOPMPSAtCriticalLevelKey), &boolValue) && boolValue)
+        if (ffCfDictGetBool(properties, CFSTR(kIOPMPSAtCriticalLevelKey), &boolValue) == NULL && boolValue)
             ffStrbufAppendS(&battery->status, "Critical, ");
         ffStrbufTrimRight(&battery->status, ' ');
         ffStrbufTrimRight(&battery->status, ',');
@@ -87,7 +98,7 @@ const char* ffDetectBattery(FFBatteryOptions* options, FFlist* results)
                     // https://github.com/AsahiLinux/linux/blob/b5c05cbffb0488c7618106926d522cc3b43d93d5/drivers/power/supply/macsmc_power.c#L410-L419
                     int year = (manufactureDate[0] - '0') * 10 + (manufactureDate[1] - '0') + 2000 - 8;
                     int month = (manufactureDate[2] - '0') * 10 + (manufactureDate[3] - '0');
-                    int day = (manufactureDate[4] - '0') * 10 + (manufactureDate[3] - '5');
+                    int day = (manufactureDate[4] - '0') * 10 + (manufactureDate[3] - '0');
                     ffStrbufSetF(&battery->manufactureDate, "%.4d-%.2d-%.2d", year, month, day);
                 }
             }

@@ -3,6 +3,8 @@
 #include "util/stringUtils.h"
 
 #include <windows.h>
+#include <ntstatus.h>
+#include <winternl.h>
 
 static void createSubfolders(const char* fileName)
 {
@@ -38,7 +40,7 @@ bool ffWriteFileData(const char* fileName, size_t dataSize, const void* data)
 
 static inline void readWithLength(HANDLE handle, FFstrbuf* buffer, uint32_t length)
 {
-    ffStrbufEnsureFixedLengthFree(buffer, length);
+    ffStrbufEnsureFree(buffer, length);
     DWORD bytesRead = 0;
     while(
         length > 0 &&
@@ -100,6 +102,49 @@ bool ffAppendFileBuffer(const char* fileName, FFstrbuf* buffer)
     return ffAppendFDBuffer(handle, buffer);
 }
 
+HANDLE openat(HANDLE dfd, const char* fileName, bool directory)
+{
+    NTSTATUS ret;
+    UNICODE_STRING fileNameW;
+    ret = RtlAnsiStringToUnicodeString(&fileNameW, &(ANSI_STRING) {
+        .Length = (USHORT) strlen(fileName),
+        .Buffer = (PCHAR) fileName
+    }, TRUE);
+    if (!NT_SUCCESS(ret)) return INVALID_HANDLE_VALUE;
+
+    FF_AUTO_CLOSE_FD HANDLE hFile;
+    IO_STATUS_BLOCK iosb = {};
+    ret = NtOpenFile(&hFile, FILE_READ_DATA | SYNCHRONIZE, &(OBJECT_ATTRIBUTES) {
+        .Length = sizeof(OBJECT_ATTRIBUTES),
+        .RootDirectory = dfd,
+        .ObjectName = &fileNameW,
+    }, &iosb, FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_NONALERT | (directory ? FILE_DIRECTORY_FILE : FILE_NON_DIRECTORY_FILE));
+    RtlFreeUnicodeString(&fileNameW);
+
+    if(!NT_SUCCESS(ret) || iosb.Information != FILE_OPENED)
+        return INVALID_HANDLE_VALUE;
+
+    return hFile;
+}
+
+bool ffAppendFileBufferRelative(HANDLE dfd, const char* fileName, FFstrbuf* buffer)
+{
+    HANDLE FF_AUTO_CLOSE_FD fd = openat(dfd, fileName, false);
+    if(fd == INVALID_HANDLE_VALUE)
+        return false;
+
+    return ffAppendFDBuffer(fd, buffer);
+}
+
+ssize_t ffReadFileDataRelative(HANDLE dfd, const char* fileName, size_t dataSize, void* data)
+{
+    HANDLE FF_AUTO_CLOSE_FD fd = openat(dfd, fileName, false);
+    if(fd == INVALID_HANDLE_VALUE)
+        return -1;
+
+    return ffReadFDData(fd, dataSize, data);
+}
+
 bool ffPathExpandEnv(const char* in, FFstrbuf* out)
 {
     DWORD length = ExpandEnvironmentStringsA(in, NULL, 0);
@@ -114,6 +159,11 @@ bool ffPathExpandEnv(const char* in, FFstrbuf* out)
 
 bool ffSuppressIO(bool suppress)
 {
+    #ifndef NDEBUG
+    if (instance.config.display.debugMode)
+        return false;
+    #endif
+
     static bool init = false;
     static HANDLE hOrigOut = INVALID_HANDLE_VALUE;
     static HANDLE hOrigErr = INVALID_HANDLE_VALUE;
@@ -205,7 +255,7 @@ void ffListFilesRecursively(const char* path, bool pretty)
     listFilesRecursively(folder.length, &folder, 0, NULL, pretty);
 }
 
-const char* ffGetTerminalResponse(const char* request, const char* format, ...)
+const char* ffGetTerminalResponse(const char* request, int nParams, const char* format, ...)
 {
     HANDLE hInput = GetStdHandle(STD_INPUT_HANDLE);
     FF_AUTO_CLOSE_FD HANDLE hConin = INVALID_HANDLE_VALUE;
@@ -256,20 +306,40 @@ const char* ffGetTerminalResponse(const char* request, const char* format, ...)
             ReadConsoleInputW(hInput, &record, 1, &len);
     }
 
-    char buffer[512];
-    DWORD bytes = 0;
-    ReadFile(hInput, buffer, sizeof(buffer) - 1, &bytes, NULL);
+    va_list args;
+    va_start(args, format);
+
+    char buffer[1024];
+    uint32_t bytesRead = 0;
+
+    while (true)
+    {
+        DWORD bytes = 0;
+        if (!ReadFile(hInput, buffer, sizeof(buffer) - 1, &bytes, NULL) || bytes == 0)
+        {
+            va_end(args);
+            return "ReadFile() failed";
+        }
+
+        bytesRead += bytes;
+        buffer[bytesRead] = '\0';
+
+        va_list cargs;
+        va_copy(cargs, args);
+        int ret = vsscanf(buffer, format, args);
+        va_end(cargs);
+
+        if (ret <= 0)
+        {
+            va_end(args);
+            return "vsscanf(buffer, format, args) failed";
+        }
+        if (ret >= nParams)
+            break;
+    }
 
     SetConsoleMode(hInput, inputMode);
 
-    if(bytes <= 0)
-        return "ReadFile() failed";
-
-    buffer[bytes] = '\0';
-
-    va_list args;
-    va_start(args, format);
-    vsscanf(buffer, format, args);
     va_end(args);
 
     return NULL;

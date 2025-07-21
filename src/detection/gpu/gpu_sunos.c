@@ -1,5 +1,4 @@
 #include "gpu.h"
-#include "common/properties.h"
 #include "common/io/io.h"
 #include "common/processing.h"
 
@@ -10,7 +9,7 @@ const char* ffDetectGPUImpl(FF_MAYBE_UNUSED const FFGPUOptions* options, FFlist*
 
     FF_STRBUF_AUTO_DESTROY buffer = ffStrbufCreate();
     const char* error = ffProcessAppendStdOut(&buffer, (char* const[]) {
-        "scanpci",
+        "/usr/bin/scanpci",
         "-v",
         NULL,
     });
@@ -19,8 +18,6 @@ const char* ffDetectGPUImpl(FF_MAYBE_UNUSED const FFGPUOptions* options, FFlist*
 
     if (!ffStrbufStartsWithS(&buffer, "\npci "))
         return "Invalid scanpci result";
-
-    FF_STRBUF_AUTO_DESTROY pciids = ffStrbufCreate();
 
     // pci bus 0x0000 cardnum 0x00 function 0x00: vendor 0x1414 device 0x008e
     //  Device unknown
@@ -38,8 +35,14 @@ const char* ffDetectGPUImpl(FF_MAYBE_UNUSED const FFGPUOptions* options, FFlist*
     {
         // find the start of device entry
         const char* pstart = memrchr(buffer.chars, '\n', (size_t) (pclass - buffer.chars));
+        if (pstart == NULL)
+            return "PCI info not found, invalid scanpci result";
         while (pstart[1] != 'p')
+        {
             pstart = memrchr(buffer.chars, '\n', (size_t) (pstart - buffer.chars - 1));
+            if (pstart == NULL)
+                return "PCI info not found, invalid scanpci result";
+        }
         ++pstart;
 
         uint32_t vendorId, deviceId;
@@ -53,10 +56,12 @@ const char* ffDetectGPUImpl(FF_MAYBE_UNUSED const FFGPUOptions* options, FFlist*
         uint32_t revision = (uint32_t) strtoul(pclass, NULL, 16);
 
         FFGPUResult* gpu = (FFGPUResult*)ffListAdd(gpus);
-        ffStrbufInitStatic(&gpu->vendor, ffGetGPUVendorString(vendorId));
+        ffStrbufInitStatic(&gpu->vendor, ffGPUGetVendorString(vendorId));
+        ffStrbufInit(&gpu->memoryType);
         ffStrbufInit(&gpu->name);
         ffStrbufInit(&gpu->driver);
-        ffStrbufInit(&gpu->platformApi);
+        ffStrbufInitStatic(&gpu->platformApi, "/usr/bin/scanpci");
+        gpu->index = FF_GPU_INDEX_UNSET;
         gpu->temperature = FF_GPU_TEMP_UNSET;
         gpu->coreCount = FF_GPU_CORE_COUNT_UNSET;
         gpu->coreUsage = FF_GPU_CORE_USAGE_UNSET;
@@ -66,17 +71,11 @@ const char* ffDetectGPUImpl(FF_MAYBE_UNUSED const FFGPUOptions* options, FFlist*
         gpu->frequency = FF_GPU_FREQUENCY_UNSET;
 
         if (gpu->vendor.chars == FF_GPU_VENDOR_NAME_AMD)
-        {
-            char query[32];
-            snprintf(query, sizeof(query), "%X,\t%X,", (unsigned) deviceId, (unsigned) revision);
-            ffParsePropFileData("libdrm/amdgpu.ids", query, &gpu->name);
-        }
+            ffGPUQueryAmdGpuName((uint16_t) deviceId, (uint8_t) revision, gpu);
 
         if (gpu->name.length == 0)
         {
-            if (pciids.length == 0)
-                ffReadFileBuffer(FASTFETCH_TARGET_DIR_ROOT "/usr/share/hwdata/pci.ids", &pciids);
-            ffGPUParsePciIds(&pciids, (uint8_t) subclass, (uint16_t) vendorId, (uint16_t) deviceId, gpu, NULL);
+            ffGPUFillVendorAndName((uint8_t) subclass, (uint16_t) vendorId, (uint16_t) deviceId, gpu);
         }
     }
 

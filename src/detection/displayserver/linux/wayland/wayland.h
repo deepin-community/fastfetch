@@ -9,7 +9,7 @@
 
 #include "../displayserver_linux.h"
 
-typedef enum WaylandProtocolType
+typedef enum __attribute__((__packed__)) WaylandProtocolType
 {
     FF_WAYLAND_PROTOCOL_TYPE_NONE,
     FF_WAYLAND_PROTOCOL_TYPE_GLOBAL,
@@ -36,9 +36,12 @@ typedef struct WaylandDisplay
     WaylandData* parent;
     int32_t width;
     int32_t height;
+    int32_t refreshRate;
+    int32_t preferredWidth;
+    int32_t preferredHeight;
+    int32_t preferredRefreshRate;
     int32_t physicalWidth;
     int32_t physicalHeight;
-    int32_t refreshRate;
     double scale;
     enum wl_output_transform transform;
     FFDisplayType type;
@@ -46,7 +49,12 @@ typedef struct WaylandDisplay
     FFstrbuf description;
     FFstrbuf edidName;
     uint64_t id;
+    bool hdrInfoAvailable;
+    bool hdrSupported;
     bool hdrEnabled;
+    uint16_t myear;
+    uint16_t mweek;
+    uint32_t serial;
     void* internal;
 } WaylandDisplay;
 
@@ -71,10 +79,10 @@ void ffWaylandOutputDescriptionListener(void* data, FF_MAYBE_UNUSED void* output
 // Modifies content of display. Don't call this function when calling ffdsAppendDisplay
 uint32_t ffWaylandHandleRotation(WaylandDisplay* display);
 
-void ffWaylandHandleGlobalOutput(WaylandData* wldata, struct wl_registry* registry, uint32_t name, uint32_t version);
-void ffWaylandHandleZwlrOutput(WaylandData* wldata, struct wl_registry* registry, uint32_t name, uint32_t version);
-void ffWaylandHandleKdeOutput(WaylandData* wldata, struct wl_registry* registry, uint32_t name, uint32_t version);
-void ffWaylandHandleKdeOutputOrder(WaylandData* wldata, struct wl_registry* registry, uint32_t name, uint32_t version);
-void ffWaylandHandleZxdgOutput(WaylandData* wldata, struct wl_registry* registry, uint32_t name, uint32_t version);
+const char* ffWaylandHandleGlobalOutput(WaylandData* wldata, struct wl_registry* registry, uint32_t name, uint32_t version);
+const char* ffWaylandHandleZwlrOutput(WaylandData* wldata, struct wl_registry* registry, uint32_t name, uint32_t version);
+const char* ffWaylandHandleKdeOutput(WaylandData* wldata, struct wl_registry* registry, uint32_t name, uint32_t version);
+const char* ffWaylandHandleKdeOutputOrder(WaylandData* wldata, struct wl_registry* registry, uint32_t name, uint32_t version);
+const char* ffWaylandHandleZxdgOutput(WaylandData* wldata, struct wl_registry* registry, uint32_t name, uint32_t version);
 
 #endif

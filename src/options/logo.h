@@ -5,7 +5,7 @@
 #define FASTFETCH_LOGO_MAX_NAMES 9
 #define FASTFETCH_LOGO_MAX_COLORS 9 //two digits would make parsing much more complicated (index 1 - 9)
 
-typedef enum FFLogoType
+typedef enum __attribute__((__packed__)) FFLogoType
 {
     FF_LOGO_TYPE_AUTO,        //if something is given, first try builtin, then file. Otherwise detect logo
     FF_LOGO_TYPE_BUILTIN,     //builtin ascii art
@@ -17,13 +17,14 @@ typedef enum FFLogoType
     FF_LOGO_TYPE_IMAGE_SIXEL, //image file, printed as sixel codes
     FF_LOGO_TYPE_IMAGE_KITTY, //image file, printed as kitty graphics protocol
     FF_LOGO_TYPE_IMAGE_KITTY_DIRECT, //image file, tell the terminal emulator to read image data from the specified file (Supported by kitty and wezterm)
+    FF_LOGO_TYPE_IMAGE_KITTY_ICAT, //image file, use `kitten icat` to display the image. Requires binary `kitten` to be installed"
     FF_LOGO_TYPE_IMAGE_ITERM, //image file, printed as iterm graphics protocol
     FF_LOGO_TYPE_IMAGE_CHAFA, //image file, printed as ascii art using libchafa
     FF_LOGO_TYPE_IMAGE_RAW,   //image file, printed as raw binary string
     FF_LOGO_TYPE_NONE,        //--logo none
 } FFLogoType;
 
-typedef enum FFLogoPosition
+typedef enum __attribute__((__packed__)) FFLogoPosition
 {
     FF_LOGO_POSITION_LEFT,
     FF_LOGO_POSITION_TOP,

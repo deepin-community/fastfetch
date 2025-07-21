@@ -15,8 +15,10 @@
 #define CL_TARGET_OPENCL_VERSION 110
 #ifndef __APPLE__
     #include <CL/cl.h>
+    #include <CL/cl_ext.h>
 #else
     #include <OpenCL/cl.h>
+    #include <OpenCL/cl_ext.h>
 #endif
 
 typedef struct OpenCLData
@@ -31,8 +33,23 @@ static const char* openCLHandleData(OpenCLData* data, FFOpenCLResult* result)
 {
     cl_platform_id platforms[32];
     cl_uint numPlatforms = 0;
-    if (data->ffclGetPlatformIDs(sizeof(platforms) / sizeof(platforms[0]), platforms, &numPlatforms) != CL_SUCCESS)
-        return "clGetPlatformIDs() failed";
+    cl_int ret = data->ffclGetPlatformIDs(ARRAY_SIZE(platforms), platforms, &numPlatforms);
+    if (ret != CL_SUCCESS)
+    {
+        switch (ret)
+        {
+            #ifdef CL_PLATFORM_NOT_FOUND_KHR // not available on macOS
+            case CL_PLATFORM_NOT_FOUND_KHR:
+                return "clGetPlatformIDs() failed: CL_PLATFORM_NOT_FOUND_KHR";
+            #endif
+            case CL_INVALID_VALUE:
+                return "clGetPlatformIDs() failed: CL_INVALID_VALUE";
+            case CL_OUT_OF_HOST_MEMORY:
+                return "clGetPlatformIDs() failed: CL_OUT_OF_HOST_MEMORY";
+            default:
+                return "clGetPlatformIDs() failed: unknown error";
+        }
+    }
 
     if (numPlatforms == 0)
         return "clGetPlatformIDs returned 0 platforms";
@@ -60,7 +77,7 @@ static const char* openCLHandleData(OpenCLData* data, FFOpenCLResult* result)
         }
 
         cl_device_id deviceIDs[32];
-        cl_uint numDevices = (cl_uint) (sizeof(deviceIDs) / sizeof(deviceIDs[0]));
+        cl_uint numDevices = (cl_uint) ARRAY_SIZE(deviceIDs);
         if (data->ffclGetDeviceIDs(platforms[iplat], CL_DEVICE_TYPE_GPU, numDevices, deviceIDs, &numDevices) != CL_SUCCESS)
             continue;
 
@@ -75,6 +92,8 @@ static const char* openCLHandleData(OpenCLData* data, FFOpenCLResult* result)
             ffStrbufInit(&gpu->vendor);
             ffStrbufInit(&gpu->driver);
             ffStrbufInit(&gpu->platformApi);
+            ffStrbufInit(&gpu->memoryType);
+            gpu->index = FF_GPU_INDEX_UNSET;
             gpu->temperature = FF_GPU_TEMP_UNSET;
             gpu->coreCount = FF_GPU_CORE_COUNT_UNSET;
             gpu->type = FF_GPU_TYPE_UNKNOWN;
@@ -94,7 +113,7 @@ static const char* openCLHandleData(OpenCLData* data, FFOpenCLResult* result)
             {
                 cl_uint vendorId;
                 if (data->ffclGetDeviceInfo(deviceID, CL_DEVICE_VENDOR_ID, sizeof(vendorId), &vendorId, NULL) == CL_SUCCESS)
-                    ffStrbufSetStatic(&gpu->vendor, ffGetGPUVendorString(vendorId));
+                    ffStrbufSetStatic(&gpu->vendor, ffGPUGetVendorString(vendorId));
                 if (gpu->vendor.length == 0 && data->ffclGetDeviceInfo(deviceID, CL_DEVICE_VENDOR, sizeof(buffer), buffer, NULL) == CL_SUCCESS)
                     ffStrbufSetS(&gpu->vendor, buffer);
             }
@@ -148,7 +167,7 @@ static const char* detectOpenCL(FFOpenCLResult* result)
 
     #ifndef __APPLE__
 
-    FF_LIBRARY_LOAD(opencl, &instance.config.library.libOpenCL, "dlopen libOpenCL" FF_LIBRARY_EXTENSION" failed",
+    FF_LIBRARY_LOAD(opencl, "dlopen libOpenCL" FF_LIBRARY_EXTENSION" failed",
     #ifdef _WIN32
         "OpenCL"FF_LIBRARY_EXTENSION, -1,
     #endif

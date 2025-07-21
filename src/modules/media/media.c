@@ -6,8 +6,6 @@
 
 #include <ctype.h>
 
-#define FF_MEDIA_NUM_FORMAT_ARGS 5
-
 static inline bool shouldIgnoreChar(char c)
 {
     return isblank(c) || c == '-' || c == '.';
@@ -63,7 +61,7 @@ void ffPrintMedia(FFMediaOptions* options)
         "[Lyric Video]", "[Official Lyric Video]", "[Lyrics]",
         "| Lyric Video", "| Official Lyric Video", "| Lyrics",
     };
-    ffStrbufRemoveStrings(&songPretty, sizeof(removeStrings) / sizeof(removeStrings[0]), removeStrings);
+    ffStrbufRemoveStrings(&songPretty, ARRAY_SIZE(removeStrings), removeStrings);
     ffStrbufTrimRight(&songPretty, ' ');
 
     if(songPretty.length == 0)
@@ -95,12 +93,15 @@ void ffPrintMedia(FFMediaOptions* options)
     }
     else
     {
-        FF_PRINT_FORMAT_CHECKED(FF_MEDIA_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_MEDIA_NUM_FORMAT_ARGS, ((FFformatarg[]) {
-            {FF_FORMAT_ARG_TYPE_STRBUF, &songPretty, "combined"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &media->song, "title"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &media->artist, "artist"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &media->album, "album"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &media->status, "status"},
+        FF_PRINT_FORMAT_CHECKED(FF_MEDIA_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, ((FFformatarg[]) {
+            FF_FORMAT_ARG(songPretty, "combined"),
+            FF_FORMAT_ARG(media->song, "title"),
+            FF_FORMAT_ARG(media->artist, "artist"),
+            FF_FORMAT_ARG(media->album, "album"),
+            FF_FORMAT_ARG(media->status, "status"),
+            FF_FORMAT_ARG(media->player, "player-name"),
+            FF_FORMAT_ARG(media->playerId, "player-id"),
+            FF_FORMAT_ARG(media->url, "url"),
         }));
     }
 }
@@ -151,36 +152,39 @@ void ffGenerateMediaJsonResult(FF_MAYBE_UNUSED FFMediaOptions* options, yyjson_m
     }
 
     yyjson_mut_val* obj = yyjson_mut_obj_add_obj(doc, module, "result");
-    yyjson_mut_obj_add_strbuf(doc, obj, "song", &media->song);
-    yyjson_mut_obj_add_strbuf(doc, obj, "artist", &media->artist);
-    yyjson_mut_obj_add_strbuf(doc, obj, "album", &media->album);
-    yyjson_mut_obj_add_strbuf(doc, obj, "status", &media->status);
+
+    yyjson_mut_val* song = yyjson_mut_obj_add_obj(doc, obj, "song");
+    yyjson_mut_obj_add_strbuf(doc, song, "name", &media->song);
+    yyjson_mut_obj_add_strbuf(doc, song, "artist", &media->artist);
+    yyjson_mut_obj_add_strbuf(doc, song, "album", &media->album);
+    yyjson_mut_obj_add_strbuf(doc, song, "status", &media->status);
+
+    yyjson_mut_val* player = yyjson_mut_obj_add_obj(doc, obj, "player");
+    yyjson_mut_obj_add_strbuf(doc, player, "name", &media->player);
+    yyjson_mut_obj_add_strbuf(doc, player, "id", &media->playerId);
+    yyjson_mut_obj_add_strbuf(doc, player, "url", &media->url);
 }
 
-void ffPrintMediaHelpFormat(void)
-{
-    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_MEDIA_MODULE_NAME, "{3} - {1} ({5})", FF_MEDIA_NUM_FORMAT_ARGS, ((const char* []) {
-        "Pretty media name - combined",
-        "Media name - title",
-        "Artist name - artist",
-        "Album name - album",
-        "Status - status",
-    }));
-}
+static FFModuleBaseInfo ffModuleInfo = {
+    .name = FF_MEDIA_MODULE_NAME,
+    .description = "Print playing song name",
+    .parseCommandOptions = (void*) ffParseMediaCommandOptions,
+    .parseJsonObject = (void*) ffParseMediaJsonObject,
+    .printModule = (void*) ffPrintMedia,
+    .generateJsonResult = (void*) ffGenerateMediaJsonResult,
+    .generateJsonConfig = (void*) ffGenerateMediaJsonConfig,
+    .formatArgs = FF_FORMAT_ARG_LIST(((FFModuleFormatArg[]) {
+        {"Pretty media name", "combined"},
+        {"Media name", "title"},
+        {"Artist name", "artist"},
+        {"Album name", "album"},
+        {"Status", "status"},
+    }))
+};
 
 void ffInitMediaOptions(FFMediaOptions* options)
 {
-    ffOptionInitModuleBaseInfo(
-        &options->moduleInfo,
-        FF_MEDIA_MODULE_NAME,
-        "Print playing song name",
-        ffParseMediaCommandOptions,
-        ffParseMediaJsonObject,
-        ffPrintMedia,
-        ffGenerateMediaJsonResult,
-        ffPrintMediaHelpFormat,
-        ffGenerateMediaJsonConfig
-    );
+    options->moduleInfo = ffModuleInfo;
     ffOptionInitModuleArg(&options->moduleArgs, "");
 }
 

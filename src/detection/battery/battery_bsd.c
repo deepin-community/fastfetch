@@ -41,7 +41,9 @@ const char* ffDetectBattery(FF_MAYBE_UNUSED FFBatteryOptions* options, FFlist* r
         ffStrbufInit(&battery->technology);
         ffStrbufInit(&battery->serial);
         ffStrbufInit(&battery->manufactureDate);
-
+        battery->timeRemaining = -1;
+        if (battio.battinfo.min > 0)
+            battery->timeRemaining = battio.battinfo.min * 60;
         battery->capacity = battio.battinfo.cap;
         if(battio.battinfo.state == ACPI_BATT_STAT_INVALID)
         {
@@ -68,13 +70,26 @@ const char* ffDetectBattery(FF_MAYBE_UNUSED FFBatteryOptions* options, FFlist* r
             ffStrbufTrimRight(&battery->status, ',');
         }
 
+        #ifdef ACPIIO_BATT_GET_BIX
         battio.unit = i;
         if (ioctl(acpifd, ACPIIO_BATT_GET_BIX, &battio) >= 0)
         {
             ffStrbufAppendS(&battery->manufacturer, battio.bix.oeminfo);
             ffStrbufAppendS(&battery->modelName, battio.bix.model);
             ffStrbufAppendS(&battery->technology, battio.bix.type);
+            ffStrbufAppendS(&battery->serial, battio.bix.serial);
+            battery->cycleCount = battio.bix.cycles;
         }
+        #elif defined(ACPIIO_BATT_GET_BIF)
+        battio.unit = i;
+        if (ioctl(acpifd, ACPIIO_BATT_GET_BIF, &battio) >= 0)
+        {
+            ffStrbufAppendS(&battery->manufacturer, battio.bif.oeminfo);
+            ffStrbufAppendS(&battery->modelName, battio.bif.model);
+            ffStrbufAppendS(&battery->technology, battio.bif.type);
+            ffStrbufAppendS(&battery->serial, battio.bif.serial);
+        }
+        #endif
     }
     return NULL;
 }

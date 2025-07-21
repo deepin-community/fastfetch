@@ -41,9 +41,9 @@ const char* ffDetectDiskIO(FFlist* result, FFDiskIOOptions* options)
         return "No physical disk found";
 
     uint64_t time2 = ffTimeGetNow();
-    while (time2 - time1 < 1000)
+    while (time2 - time1 < options->waitTime)
     {
-        ffTimeSleep((uint32_t) (1000 - (time2 - time1)));
+        ffTimeSleep((uint32_t) (options->waitTime - (time2 - time1)));
         time2 = ffTimeGetNow();
     }
 
@@ -56,8 +56,8 @@ const char* ffDetectDiskIO(FFlist* result, FFDiskIOOptions* options)
 
     for (uint32_t i = 0; i < result->length; ++i)
     {
-        FFDiskIOResult* icPrev = (FFDiskIOResult*)ffListGet(&ioCounters1, i);
-        FFDiskIOResult* icCurr = (FFDiskIOResult*)ffListGet(result, i);
+        FFDiskIOResult* icPrev = FF_LIST_GET(FFDiskIOResult, ioCounters1, i);
+        FFDiskIOResult* icCurr = FF_LIST_GET(FFDiskIOResult, *result, i);
         if (!ffStrbufEqual(&icPrev->devPath, &icCurr->devPath))
             return "Physical disk device path changed";
 
@@ -69,10 +69,15 @@ const char* ffDetectDiskIO(FFlist* result, FFDiskIOOptions* options)
             uint64_t temp = *currValue;
             *currValue -= *prevValue;
             *currValue /= (time2 - time1) / 1000 /* seconds */;
+
+            // For next function call
             *prevValue = temp;
         }
     }
+
+    // For next function call
     time1 = time2;
+    // Leak ioCounters1 here
 
     return NULL;
 }

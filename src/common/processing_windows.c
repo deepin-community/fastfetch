@@ -8,12 +8,52 @@
 
 enum { FF_PIPE_BUFSIZ = 8192 };
 
+static void argvToCmdline(char* const argv[], FFstrbuf* result)
+{
+    // From https://gist.github.com/jin-x/cdd641d98887524b091fb1f82a68717d
+
+    FF_STRBUF_AUTO_DESTROY temp = ffStrbufCreate();
+    for (int i = 0; argv[i] != NULL; i++)
+    {
+        ffStrbufSetS(&temp, argv[i]);
+        // Add slash (\) before double quotes (") and duplicate slashes before it
+        for (
+            uint32_t pos = ffStrbufFirstIndexC(&temp, '"'), cnt;
+            pos != temp.length;
+            pos = ffStrbufNextIndexC(&temp, pos + cnt * 2, '"')
+        ) {
+            cnt = 1;
+            while (pos > 0 && temp.chars[pos - 1] == '\\') { ++cnt, --pos; }
+            ffStrbufInsertNC(&temp, pos, cnt, '\\');
+        }
+
+        // Add quotes around string if whitespace chars are present (with slash duplicating at the end of string)
+        if (ffStrbufFirstIndexS(&temp, " \t") != temp.length)
+        {
+            uint32_t pos = temp.length;
+            uint32_t cnt = 0;
+            while (pos > 0 && temp.chars[pos - 1] == '\\') { ++cnt, --pos; }
+            if (cnt > 0) ffStrbufAppendNC(&temp, cnt, '\\');
+            ffStrbufPrependC(&temp, '"');
+            ffStrbufAppendC(&temp, '"');
+        }
+
+        // Add space delimiter
+        if (i > 0) ffStrbufAppendC(result, ' ');
+        ffStrbufAppend(result, &temp);
+        ffStrbufClear(&temp);
+    }
+}
+
 const char* ffProcessAppendOutput(FFstrbuf* buffer, char* const argv[], bool useStdErr)
 {
     int timeout = instance.config.general.processingTimeout;
 
+    wchar_t pipeName[32];
+    swprintf(pipeName, ARRAY_SIZE(pipeName), L"\\\\.\\pipe\\FASTFETCH-%u", GetCurrentProcessId());
+
     FF_AUTO_CLOSE_FD HANDLE hChildPipeRead = CreateNamedPipeW(
-        L"\\\\.\\pipe\\LOCAL\\",
+        pipeName,
         PIPE_ACCESS_INBOUND | FILE_FLAG_FIRST_PIPE_INSTANCE | (timeout < 0 ? 0 : FILE_FLAG_OVERLAPPED),
         0,
         1,
@@ -23,10 +63,10 @@ const char* ffProcessAppendOutput(FFstrbuf* buffer, char* const argv[], bool use
         NULL
     );
     if (hChildPipeRead == INVALID_HANDLE_VALUE)
-        return "CreateNamedPipeW(L\"\\\\.\\pipe\\LOCAL\\\") failed";
+        return "CreateNamedPipeW(L\"\\\\.\\pipe\\FASTFETCH-$(PID)\") failed";
 
     HANDLE hChildPipeWrite = CreateFileW(
-        L"\\\\.\\pipe\\LOCAL\\",
+        pipeName,
         GENERIC_WRITE,
         0,
         &(SECURITY_ATTRIBUTES){
@@ -39,7 +79,7 @@ const char* ffProcessAppendOutput(FFstrbuf* buffer, char* const argv[], bool use
         NULL
     );
     if (hChildPipeWrite == INVALID_HANDLE_VALUE)
-        return "CreateFileW(L\"\\\\.\\pipe\\LOCAL\\\") failed";
+        return "CreateFileW(L\"\\\\.\\pipe\\FASTFETCH-$(PID)\") failed";
 
     PROCESS_INFORMATION piProcInfo = {0};
 
@@ -55,12 +95,8 @@ const char* ffProcessAppendOutput(FFstrbuf* buffer, char* const argv[], bool use
         else
             siStartInfo.hStdOutput = hChildPipeWrite;
 
-        FF_STRBUF_AUTO_DESTROY cmdline = ffStrbufCreateF("\"%s\"", argv[0]);
-        for(char* const* parg = &argv[1]; *parg; ++parg)
-        {
-            ffStrbufAppendC(&cmdline, ' ');
-            ffStrbufAppendS(&cmdline, *parg);
-        }
+        FF_STRBUF_AUTO_DESTROY cmdline = ffStrbufCreate();
+        argvToCmdline(argv, &cmdline);
 
         success = CreateProcessA(
             NULL,          // application name
@@ -132,6 +168,9 @@ bool ffProcessGetInfoWindows(uint32_t pid, uint32_t* ppid, FFstrbuf* pname, FFst
     FF_AUTO_CLOSE_FD HANDLE hProcess = pid == 0
         ? GetCurrentProcess()
         : OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+
+    if (hProcess == NULL)
+        return false;
 
     if (gui)
         *gui = GetGuiResources(hProcess, GR_GDIOBJECTS) > 0;

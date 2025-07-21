@@ -7,23 +7,30 @@ FFDisplayResult* ffdsAppendDisplay(
     double refreshRate,
     uint32_t scaledWidth,
     uint32_t scaledHeight,
+    uint32_t preferredWidth,
+    uint32_t preferredHeight,
+    double preferredRefreshRate,
     uint32_t rotation,
     FFstrbuf* name,
     FFDisplayType type,
     bool primary,
     uint64_t id,
     uint32_t physicalWidth,
-    uint32_t physicalHeight)
+    uint32_t physicalHeight,
+    const char* platformApi)
 {
     if(width == 0 || height == 0)
         return NULL;
 
-    FFDisplayResult* display = ffListAdd(&result->displays);
+    FFDisplayResult* display = (FFDisplayResult*) ffListAdd(&result->displays);
     display->width = width;
     display->height = height;
     display->refreshRate = refreshRate;
     display->scaledWidth = scaledWidth;
     display->scaledHeight = scaledHeight;
+    display->preferredWidth = preferredWidth;
+    display->preferredHeight = preferredHeight;
+    display->preferredRefreshRate = preferredRefreshRate;
     display->rotation = rotation;
     ffStrbufInitMove(&display->name, name);
     display->type = type;
@@ -31,9 +38,13 @@ FFDisplayResult* ffdsAppendDisplay(
     display->physicalWidth = physicalWidth;
     display->physicalHeight = physicalHeight;
     display->primary = primary;
+    display->platformApi = platformApi;
 
     display->bitDepth = 0;
-    display->hdrEnabled = false;
+    display->hdrStatus = FF_DISPLAY_HDR_STATUS_UNKNOWN;
+    display->manufactureYear = 0;
+    display->manufactureWeek = 0;
+    display->serial = 0;
 
     return display;
 }

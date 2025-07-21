@@ -5,8 +5,6 @@
 #include "modules/wm/wm.h"
 #include "util/stringUtils.h"
 
-#define FF_WM_NUM_FORMAT_ARGS 4
-
 void ffPrintWM(FFWMOptions* options)
 {
     const FFDisplayServerResult* result = ffConnectDisplayServer();
@@ -21,11 +19,21 @@ void ffPrintWM(FFWMOptions* options)
     if(options->detectPlugin)
         ffDetectWMPlugin(&pluginName);
 
+    FF_STRBUF_AUTO_DESTROY version = ffStrbufCreate();
+    if (instance.config.general.detectVersion)
+        ffDetectWMVersion(&result->wmProcessName, &version, options);
+
     if(options->moduleArgs.outputFormat.length == 0)
     {
         ffPrintLogoAndKey(FF_WM_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT);
 
         ffStrbufWriteTo(&result->wmPrettyName, stdout);
+
+        if(version.length > 0)
+        {
+            putchar(' ');
+            ffStrbufWriteTo(&version, stdout);
+        }
 
         if(result->wmProtocolName.length > 0)
         {
@@ -45,11 +53,12 @@ void ffPrintWM(FFWMOptions* options)
     }
     else
     {
-        FF_PRINT_FORMAT_CHECKED(FF_WM_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_WM_NUM_FORMAT_ARGS, ((FFformatarg[]){
-            {FF_FORMAT_ARG_TYPE_STRBUF, &result->wmProcessName, "process-name"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &result->wmPrettyName, "pretty-name"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &result->wmProtocolName, "protocol-name"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &pluginName, "plugin-name"},
+        FF_PRINT_FORMAT_CHECKED(FF_WM_MODULE_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, ((FFformatarg[]){
+            FF_FORMAT_ARG(result->wmProcessName, "process-name"),
+            FF_FORMAT_ARG(result->wmPrettyName, "pretty-name"),
+            FF_FORMAT_ARG(result->wmProtocolName, "protocol-name"),
+            FF_FORMAT_ARG(pluginName, "plugin-name"),
+            FF_FORMAT_ARG(version, "version"),
         }));
     }
 }
@@ -118,36 +127,38 @@ void ffGenerateWMJsonResult(FF_MAYBE_UNUSED FFWMOptions* options, yyjson_mut_doc
     if(options->detectPlugin)
         ffDetectWMPlugin(&pluginName);
 
+    FF_STRBUF_AUTO_DESTROY version = ffStrbufCreate();
+    if (instance.config.general.detectVersion)
+        ffDetectWMVersion(&result->wmProcessName, &version, options);
+
     yyjson_mut_val* obj = yyjson_mut_obj_add_obj(doc, module, "result");
     yyjson_mut_obj_add_strbuf(doc, obj, "processName", &result->wmProcessName);
     yyjson_mut_obj_add_strbuf(doc, obj, "prettyName", &result->wmPrettyName);
     yyjson_mut_obj_add_strbuf(doc, obj, "protocolName", &result->wmProtocolName);
     yyjson_mut_obj_add_strbuf(doc, obj, "pluginName", &pluginName);
+    yyjson_mut_obj_add_strbuf(doc, obj, "version", &version);
 }
 
-void ffPrintWMHelpFormat(void)
-{
-    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_WM_MODULE_NAME, "{2} ({3})", FF_WM_NUM_FORMAT_ARGS, ((const char* []) {
-        "WM process name - process-name",
-        "WM pretty name - pretty-name",
-        "WM protocol name - protocol-name",
-        "WM plugin name - plugin-name",
-    }));
-}
+static FFModuleBaseInfo ffModuleInfo = {
+    .name = FF_WM_MODULE_NAME,
+    .description = "Print window manager name and version",
+    .parseCommandOptions = (void*) ffParseWMCommandOptions,
+    .parseJsonObject = (void*) ffParseWMJsonObject,
+    .printModule = (void*) ffPrintWM,
+    .generateJsonResult = (void*) ffGenerateWMJsonResult,
+    .generateJsonConfig = (void*) ffGenerateWMJsonConfig,
+    .formatArgs = FF_FORMAT_ARG_LIST(((FFModuleFormatArg[]) {
+        {"WM process name", "process-name"},
+        {"WM pretty name", "pretty-name"},
+        {"WM protocol name", "protocol-name"},
+        {"WM plugin name", "plugin-name"},
+        {"WM version", "version"},
+    }))
+};
 
 void ffInitWMOptions(FFWMOptions* options)
 {
-    ffOptionInitModuleBaseInfo(
-        &options->moduleInfo,
-        FF_WM_MODULE_NAME,
-        "Print window manager name and version",
-        ffParseWMCommandOptions,
-        ffParseWMJsonObject,
-        ffPrintWM,
-        ffGenerateWMJsonResult,
-        ffPrintWMHelpFormat,
-        ffGenerateWMJsonConfig
-    );
+    options->moduleInfo = ffModuleInfo;
     ffOptionInitModuleArg(&options->moduleArgs, "");
     options->detectPlugin = false;
 }

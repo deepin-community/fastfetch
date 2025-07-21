@@ -25,7 +25,7 @@ static const char* detectWithBacklight(FFlist* result)
     struct dirent* entry;
     while((entry = readdir(dirp)) != NULL)
     {
-        if(ffStrEquals(entry->d_name, ".") || ffStrEquals(entry->d_name, ".."))
+        if(entry->d_name[0] == '.')
             continue;
 
         ffStrbufAppendS(&backlightDir, entry->d_name);
@@ -48,7 +48,7 @@ static const char* detectWithBacklight(FFlist* result)
                     // if we managed to get edid, use it
                     ffStrbufAppendS(&brightness->name, "/edid");
                     uint8_t edidData[128];
-                    if(ffReadFileData(brightness->name.chars, sizeof(edidData), edidData) == sizeof(edidData))
+                    if(ffReadFileData(brightness->name.chars, ARRAY_SIZE(edidData), edidData) == ARRAY_SIZE(edidData))
                     {
                         ffStrbufClear(&brightness->name);
                         ffEdidGetName(edidData, &brightness->name);
@@ -74,6 +74,7 @@ static const char* detectWithBacklight(FFlist* result)
                 brightness->max = ffStrbufToDouble(&buffer);
                 brightness->min = 0;
                 brightness->current = actualBrightness;
+                brightness->builtin = true;
             }
         }
         ffStrbufSubstrBefore(&backlightDir, backlightDirLength);
@@ -99,9 +100,9 @@ double ddca_set_default_sleep_multiplier(double multiplier); // ddcutil 1.4
 DDCA_Status ddca_init(const char *libopts, int syslog_level, int opts);
 #endif
 
-static const char* detectWithDdcci(FFBrightnessOptions* options, FFlist* result)
+static const char* detectWithDdcci(FF_MAYBE_UNUSED FFBrightnessOptions* options, FFlist* result)
 {
-    FF_LIBRARY_LOAD(libddcutil, &instance.config.library.libDdcutil, "dlopen ddcutil failed", "libddcutil" FF_LIBRARY_EXTENSION, 5);
+    FF_LIBRARY_LOAD(libddcutil, "dlopen ddcutil failed", "libddcutil" FF_LIBRARY_EXTENSION, 5);
     FF_LIBRARY_LOAD_SYMBOL_MESSAGE(libddcutil, ddca_get_display_info_list2)
     FF_LIBRARY_LOAD_SYMBOL_MESSAGE(libddcutil, ddca_open_display2)
     FF_LIBRARY_LOAD_SYMBOL_MESSAGE(libddcutil, ddca_get_any_vcp_value_using_explicit_type)

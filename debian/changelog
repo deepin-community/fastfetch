@@ -1,153 +1,96 @@
-fastfetch (2.23.0-0deepin1) unstable; urgency=medium
+fastfetch (2.40.4+dfsg-1) unstable; urgency=medium
 
-  * New upstream version
-  * Support unity version detection (DE, Linux)
-  * Print model name in Battery keys if available (Battery)
-  * Add module `Zpool`
-  * Improve performance (Shell / Terminal, Linux)
-  * Support syntax of padded strings in `--<module>-format`.
-    `{variable<padlength}` and `{variable>padlength}` are supported.
+  * New upstream version 2.40.4+dfsg
 
- -- Amaro Martínez <xoas@airmail.cc>  Tue, 03 Sep 2024 00:08:26 -0500
+ -- Hiago De Franco <hiagofranco@gmail.com>  Sun, 13 Apr 2025 19:01:17 -0300
 
-fastfetch (2.22.0) UNRELEASED; urgency=medium
+fastfetch (2.39.1+dfsg-1) unstable; urgency=medium
 
-  * New upstream version
-  * Small performance improvements (Terminal, Editor)
-  * Improve arm32 and loongarch support (CPU, Linux)
-  * Ignore the parent process if env `$FFTS_IGNORE_PARENT` is set to `1` (Shell)
-  * Add code name of Apple M4 (CPU, Linux)
-  * Add ethernet speed rate detection support (LocalIP)
-  * Add zsh completion script
-  * Add Linglong package manager detection support (Packages, Linux)
+  * New upstream version 2.39.1+dfsg
 
- -- Amaro Martínez <xoas@airmail.cc>  Mon, 02 Sep 2024 23:44:25 -0500
+ -- Hiago De Franco <hiagofranco@gmail.com>  Tue, 01 Apr 2025 18:52:11 -0300
 
-fastfetch (2.8.10-0deepin) unstable; urgency=medium
+fastfetch (2.38.0+dfsg-1) unstable; urgency=medium
 
-  * New upstream version
-  * Improve stability; print more useful error message; avoid misuse (PublicIP / Weather)
-  * Use MS-DOS device name as mountFrom result, instead of useless GUID volume name (Disk, Windows)
-  * Fix color of Arco Linux
-  * Support new MacBook Air (Host, macOS)
-  * Distinguish min frequency and base frequency (CPU)
-  * Support zellij version detection (Linux, Terminal)
-  * Config presets in app folder now work with symlinks
-  * Add new module TerminalTheme, which prints the foreground and background color of the current terminal window. Currently doesn't work on Windows.
-  * Improve xonsh shell detection (Shell)
-  * Support colored percentage values (Bluetooth / Gamepad / Sound)
+  [ Hiago De Franco ]
+  * New upstream version 2.38.0+dfsg
 
- -- zhangkun <zhangkun2@uniontech.com>  Tue, 02 Apr 2024 21:14:53 +0800
+  [ Maytham Alsudany ]
+  * Bump Standards-Version to 4.7.2 (no changes)
 
-fastfetch (2.4.0-0deepin) unstable; urgency=medium
+ -- Hiago De Franco <hiagofranco@gmail.com>  Fri, 28 Feb 2025 16:05:26 -0300
 
-  * New upstream version
-  * Improve performance of detecting rpm and pkg package count (Packages, Linux / FreeBSD)
-  * Support Apple M3X temperature detection (CPU / GPU, macOS)
-  * `--ds-force-drm` support a new option `sysfs-only`
-  * Improve xfce4 version detection
-  * Detect WM and DE by enumerating running processes (WM / DE, FreeBSD)
-  * Add a new module `Physical Disk`, which detects product name, full size, serial number and so on.
+fastfetch (2.36.1+dfsg-1) unstable; urgency=medium
 
- -- zhangkun <zhangkun2@uniontech.com>  Sun, 24 Dec 2023 16:45:31 +0800
+  * New upstream version 2.36.1+dfsg
 
-fastfetch (2.2.3-deepin) stable; urgency=medium
+ -- Hiago De Franco <hiagofranco@gmail.com>  Tue, 11 Feb 2025 14:15:22 -0300
 
-  * New upstream version
-  * Update the latest mac models (Host, macOS)
-  * Fix local ips detection on Android. Regression from v2.2.0 (LocalIP, Android)
-  * Fix terminal detection on NixOS (Terminal)
-  * Fixed some bugs and added some new features
+fastfetch (2.35.0+dfsg-1) unstable; urgency=medium
 
- -- zhangkun <zhangkun2@uniontech.com>  Mon, 13 Nov 2023 19:05:14 +0800
+  * New upstream version 2.35.0+dfsg
 
-fastfetch (2.1.2-deepin) stable; urgency=medium
+ -- Hiago De Franco <hiagofranco@gmail.com>  Thu, 06 Feb 2025 17:20:31 -0300
 
-  * New upstream version
-  * Fix icon detection on Windows. It shows enabled system icons in desktop (`This PC`, `Recycle Bin`, etc) (Icon, Windows)
-  * Fix compatibility with ddcutil 2.0 (Brightness, Linux)
-  * Fix a compile warning (CPUUsage, FreeBSD)
+fastfetch (2.34.1+dfsg-1) unstable; urgency=medium
 
- -- zhangkun <zhangkun2@uniontech.com>  Sun, 22 Oct 2023 18:50:24 +0800
+  * New upstream version 2.34.1+dfsg
+  * debian: fastfetch.lintian-overrides: remove flashfetch
 
-fastfetch (2.1.1-deepin) stable; urgency=medium
+ -- Hiago De Franco <hiagofranco@gmail.com>  Fri, 17 Jan 2025 16:45:06 -0300
 
-  * New upstream version
-  * Support opkg (Packages, Linux)
-  * Support GNOME Console terminal version and font detection (Terminal, Linux)
-  * Add --cpu-freq-ndigits to set number of digits for CPU frequency (CPU)
-  * New module to detect physical disk I/O usage (DiskIO)
-  * Add --cpuusage-separate to display CPU usage per CPU logical core
-  * Add --brightness-ddcci-sleep to set the sleep times (in ms) when sending DDC/CI requests (Brightness, #580)
-  * Add Chimera Linux
-  * Add EndeavourSmall
-  * Add Xenia
+fastfetch (2.34.0+dfsg-1) unstable; urgency=medium
 
- -- zhangkun <zhangkun2@uniontech.com>  Sun, 15 Oct 2023 21:36:21 +0800
+  * New upstream version 2.34.0+dfsg (Closes: #1092144)
+  * d/p/set-timezone-to-UTC-when-reading-SOURCE_DATE_EPOCH.patch: remove
+    patch. This patch is not needed anymore since this has been merged
+    upstream.
 
-fastfetch (2.1.0-deepin) stable; urgency=medium
+ -- Hiago De Franco <hiagofranco@gmail.com>  Thu, 09 Jan 2025 13:26:40 -0300
 
-  * New upstream version
-  * Add `--format json`, which prints system information as JSON format
-  * Add fast path for xfce4 version detection (DE, FreeBSD)
-  * Support contour terminal version and font detection (Terminal / TerminalFont)
-  * Support `kitty-direct` / `iterm` without specifying logo width / height. Note: in this case, the entre screen will be cleared.
-  * Support new flag `--logo-separate`. If true, print modules at bottom of the logo
-  * Support Apple Silicon CPU frequency detection (CPU, macOS)
-  * Support user login time detection (Users)
-  * Support winget package manager detection, guarded behind `--allow-slow-operations` (Packages, Windows)
-  * Print monitor type (built-in or external) (Display)
-  * Support full GPU detection in WSL (Linux, GPU)
-  * Add `--module-key " "` as a special case for hiding keys
-  * Support `--title-format`. See `fastfetch --help title-format` for detail
-  * Support `--colors-key` (Colors)
-  * Add `-c` as a shortcut of `--load-config`. Note it was used as the shortcut of `--color` before 2.0.5
-  * Support Windows Service Pack vers  * Fix fastfetch hanging in specific environment (#561)
-  * Fix short read when reading from stdin (Logo)
-  * Fix `poll() timeout or failed` error when image is very large (Logo)
-  * Fix Termux Monet terminal version detection (Terminal)
-  * Fix zpool volumes detection (Disk, Linux)
-  * Fix external volumes detection (Disk, Linux)
-  * Fix snap package number detection on systems other than Ubuntu (Packages, Linux)
-  * Fix dpkg / apt package number detection (Packages, Linux)
-  * Fix bluetooth mac address detection (Bluetooth, Windows)ion detection (Kernel, Windows)
-  * Support Debian point releases detection (OS, Linux)
-  * Add new module `NetIO` which prints network throughput (usage) of specified interface. Note this module costs about 1 second to finish.
-  * Use `lscpu` to detect CPU name for ARM CPUs (CPU, Linux)
+fastfetch (2.30.1+dfsg-1) unstable; urgency=medium
 
- -- zhangkun <zhangkun2@uniontech.com>  Tue, 03 Oct 2023 17:29:43 +0800
+  [ Hiago de Franco ]
+  * New upstream version 2.30.1+dfsg
 
-fastfetch (2.0.5-0deepin) stable; urgency=medium
+  [ Carlos Henrique Lima Melara ]
+  * d/p/set-timezone-to-UTC-when-reading-SOURCE_DATE_EPOCH.patch: new patch
 
-  * New upstream version
-  * Add option `--disk-use-available` (#543)
-  * Add option `--disk-show-readonly` 
+ -- Carlos Henrique Lima Melara <charlesmelara@riseup.net>  Sat, 23 Nov 2024 22:59:32 -0300
 
- -- xiangzelong <xiangzelong@deepin.com>  Mon, 04 Sep 2023 09:49:08 +0800
+fastfetch (2.29.0+dfsg-1) unstable; urgency=medium
 
-fastfetch (2.0.1-0deepin1) stable; urgency=medium
+  * New upstream version 2.29.0+dfsg
 
-  * enable system yyjson
+ -- Hiago De Franco <hiagofranco@gmail.com>  Mon, 04 Nov 2024 08:23:31 -0300
 
- -- xiangzelong <xiangzelong@deepin.org>  Tue, 22 Aug 2023 17:39:04 +0800
+fastfetch (2.28.0+dfsg-1) unstable; urgency=medium
 
-fastfetch (2.0.1-0deepin) stable; urgency=medium
+  * New upstream version 2.28.0+dfsg
 
-  * new upstream release
-  * ntroduces a new configuration file format: JSON config
-  * Add LM (Login Manager) module. 
-  * Fix used spaces calculation (Disk, Linux / BSD / macOS)
+ -- Hiago De Franco <hiagofranco@gmail.com>  Thu, 24 Oct 2024 20:07:42 -0300
 
- -- xiangzelong <xiangzelong@deepin.org>  Tue, 22 Aug 2023 12:47:26 +0800
+fastfetch (2.27.1+dfsg-1) unstable; urgency=medium
 
-fastfetch (1.12.2-0deepin1) unstable; urgency=medium
+  * New upstream version 2.27.1+dfsg
+  * Update copyright file with the latest changes
 
-  * fix byteUsed not correctly in ext4
+ -- Hiago De Franco <hiagofranco@gmail.com>  Sat, 12 Oct 2024 16:40:05 -0300
 
- -- xiangzelong <xiangzelong@deepin.org>  Tue, 01 Aug 2023 16:47:34 +0800
+fastfetch (2.21.3+dfsg-1) unstable; urgency=medium
 
-fastfetch (1.12.2-0deepin) unstable; urgency=medium
+  * New upstream version 2.21.3+dfsg
 
-  * Initial Release.
+ -- Maytham Alsudany <maytha8thedev@gmail.com>  Sat, 24 Aug 2024 12:20:59 +0800
 
- -- xiangzelong <xiangzelong@deepin.org>  Mon, 31 Jul 2023 13:30:50 +0800
+fastfetch (2.15.0+dfsg-2) unstable; urgency=medium
+
+  * Source only upload.
+
+ -- Hiago De Franco <hiagofranco@gmail.com>  Sat, 22 Jun 2024 21:03:27 -0300
+
+fastfetch (2.15.0+dfsg-1) unstable; urgency=medium
+
+  * Initial release. (Closes: #1053995)
+
+ -- Hiago De Franco <hiagofranco@gmail.com>  Mon, 10 Jun 2024 14:00:50 +0800

@@ -244,13 +244,19 @@ static void detectFootTerminal(FFTerminalFontResult* terminalFont)
         return;
     }
     uint32_t equal = ffStrbufNextIndexS(&font, colon, "size=");
-    font.chars[colon] = 0;
+    font.chars[colon] = '\0';
     if (equal == font.length)
     {
         ffFontInitValues(&terminalFont->font, font.chars, "8");
         return;
     }
-    ffFontInitValues(&terminalFont->font, font.chars, &font.chars[equal + strlen("size=")]);
+    uint32_t size = equal + (uint32_t) strlen("size=");
+    uint32_t comma = ffStrbufNextIndexC(&font, size, ',');
+    if (comma < font.length)
+        font.chars[comma] = '\0';
+    ffFontInitValues(&terminalFont->font, font.chars, &font.chars[size]);
+    if (comma < font.length)
+        ffFontInitValues(&terminalFont->fallback, &font.chars[comma + 1], NULL);
 }
 
 static void detectQTerminal(FFTerminalFontResult* terminalFont)
@@ -412,6 +418,21 @@ static void detectWestonTerminal(FFTerminalFontResult* terminalFont)
     ffFontInitValues(&terminalFont->font, font.chars, size.chars);
 }
 
+#ifdef __HAIKU__
+static void detectHaikuTerminal(FFTerminalFontResult* terminalFont)
+{
+    FF_STRBUF_AUTO_DESTROY font = ffStrbufCreate();
+    FF_STRBUF_AUTO_DESTROY size = ffStrbufCreate();
+    ffParsePropFileConfigValues("Terminal/Default", 2, (FFpropquery[]) {
+        {"\"Half Font Family\" , ", &font},
+        {"\"Half Font Size\" , ", &size},
+    });
+    if (!font.length) ffStrbufSetStatic(&font, "Noto Sans Mono");
+    if (!size.length) ffStrbufSetStatic(&size, "12");
+    ffFontInitValues(&terminalFont->font, font.chars, size.chars);
+}
+#endif
+
 void ffDetectTerminalFontPlatform(const FFTerminalResult* terminal, FFTerminalFontResult* terminalFont)
 {
     if(ffStrbufIgnCaseEqualS(&terminal->processName, "konsole"))
@@ -448,4 +469,12 @@ void ffDetectTerminalFontPlatform(const FFTerminalResult* terminal, FFTerminalFo
         detectWestonTerminal(terminalFont);
     else if(ffStrbufStartsWithIgnCaseS(&terminal->processName, "terminator"))
         detectTerminator(terminalFont);
+    else if(ffStrbufStartsWithIgnCaseS(&terminal->processName, "sakura"))
+        detectFromConfigFile("sakura/sakura.conf", "font=", terminalFont);
+    #ifdef __HAIKU__
+    else if(ffStrbufStartsWithIgnCaseS(&terminal->processName, "Terminal"))
+        detectHaikuTerminal(terminalFont);
+    #endif
+    else if(ffStrbufStartsWithIgnCaseS(&terminal->processName, "termite"))
+        detectFromConfigFile("termite/config", "font =", terminalFont);
 }

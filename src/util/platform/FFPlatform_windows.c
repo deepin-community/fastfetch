@@ -1,5 +1,6 @@
 #include "FFPlatform_private.h"
 #include "common/io/io.h"
+#include "common/library.h"
 #include "util/stringUtils.h"
 #include "util/windows/unicode.h"
 #include "util/windows/registry.h"
@@ -30,13 +31,12 @@ static void getExePath(FFPlatform* platform)
 
 static void getHomeDir(FFPlatform* platform)
 {
-    PWSTR pPath;
+    PWSTR pPath = NULL;
     if(SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_Profile, KF_FLAG_DEFAULT, NULL, &pPath)))
     {
         ffStrbufSetWS(&platform->homeDir, pPath);
         ffStrbufReplaceAllC(&platform->homeDir, '\\', '/');
         ffStrbufEnsureEndsWithC(&platform->homeDir, '/');
-        CoTaskMemFree(pPath);
     }
     else
     {
@@ -44,28 +44,29 @@ static void getHomeDir(FFPlatform* platform)
         ffStrbufReplaceAllC(&platform->homeDir, '\\', '/');
         ffStrbufEnsureEndsWithC(&platform->homeDir, '/');
     }
+    CoTaskMemFree(pPath);
 }
 
 static void getCacheDir(FFPlatform* platform)
 {
-    PWSTR pPath;
+    PWSTR pPath = NULL;
     if(SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_LocalAppData, KF_FLAG_DEFAULT, NULL, &pPath)))
     {
         ffStrbufSetWS(&platform->cacheDir, pPath);
         ffStrbufReplaceAllC(&platform->cacheDir, '\\', '/');
         ffStrbufEnsureEndsWithC(&platform->cacheDir, '/');
-        CoTaskMemFree(pPath);
     }
     else
     {
         ffStrbufAppend(&platform->cacheDir, &platform->homeDir);
         ffStrbufAppendS(&platform->cacheDir, "AppData/Local/");
     }
+    CoTaskMemFree(pPath);
 }
 
 static void platformPathAddKnownFolder(FFlist* dirs, REFKNOWNFOLDERID folderId)
 {
-    PWSTR pPath;
+    PWSTR pPath = NULL;
     if(SUCCEEDED(SHGetKnownFolderPath(folderId, 0, NULL, &pPath)))
     {
         FF_STRBUF_AUTO_DESTROY buffer = ffStrbufCreateWS(pPath);
@@ -73,8 +74,8 @@ static void platformPathAddKnownFolder(FFlist* dirs, REFKNOWNFOLDERID folderId)
         ffStrbufEnsureEndsWithC(&buffer, '/');
         if (!ffListContains(dirs, &buffer, (void*) ffStrbufEqual))
             ffStrbufInitMove((FFstrbuf*) ffListAdd(dirs), &buffer);
-        CoTaskMemFree(pPath);
     }
+    CoTaskMemFree(pPath);
 }
 
 static void platformPathAddEnvSuffix(FFlist* dirs, const char* env, const char* suffix)
@@ -138,7 +139,7 @@ static void getUserName(FFPlatform* platform)
     else
     {
         wchar_t buffer[128];
-        DWORD len = sizeof(buffer) / sizeof(*buffer);
+        DWORD len = ARRAY_SIZE(buffer);
         if(GetUserNameW(buffer, &len))
             ffStrbufSetWS(&platform->userName, buffer);
     }
@@ -147,7 +148,7 @@ static void getUserName(FFPlatform* platform)
 static void getHostName(FFPlatform* platform)
 {
     wchar_t buffer[128];
-    DWORD len = sizeof(buffer) / sizeof(*buffer);
+    DWORD len = ARRAY_SIZE(buffer);
     if(GetComputerNameExW(ComputerNameDnsHostname, buffer, &len))
         ffStrbufSetWS(&platform->hostName, buffer);
 }
@@ -157,6 +158,17 @@ static void getUserShell(FFPlatform* platform)
     // Works in MSYS2
     ffStrbufAppendS(&platform->userShell, getenv("SHELL"));
     ffStrbufReplaceAllC(&platform->userShell, '\\', '/');
+}
+
+static void detectWine(FFstrbuf* buf)
+{
+    static const char *(__cdecl *pwine_get_version)(void);
+    HMODULE hntdll = GetModuleHandleW(L"ntdll.dll");
+    if (!hntdll) return;
+    pwine_get_version = (void *)GetProcAddress(hntdll, "wine_get_version");
+    if (!pwine_get_version) return;
+    ffStrbufAppendS(buf, buf->length ? " - wine " : "wine ");
+    ffStrbufAppendS(buf, pwine_get_version());
 }
 
 static void getSystemReleaseAndVersion(FFPlatformSysinfo* info)
@@ -187,6 +199,7 @@ static void getSystemReleaseAndVersion(FFPlatformSysinfo* info)
         else
             ffRegReadStrbuf(hKey, L"ReleaseId", &info->displayVersion, NULL); // For old Windows 10
     }
+    detectWine(&info->displayVersion);
 
     ffRegReadStrbuf(hKey, L"BuildLabEx", &info->version, NULL);
 

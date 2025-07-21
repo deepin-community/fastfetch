@@ -36,11 +36,19 @@
         #if FF_HAVE_PTHREAD_NP
             #include <pthread_np.h>
         #endif
-        #define FF_THREAD_MUTEX_INITIALIZER PTHREAD_MUTEX_INITIALIZER
-        typedef pthread_mutex_t FFThreadMutex;
         typedef pthread_t FFThreadType;
-        static inline void ffThreadMutexLock(FFThreadMutex* mutex) { pthread_mutex_lock(mutex); }
-        static inline void ffThreadMutexUnlock(FFThreadMutex* mutex) { pthread_mutex_unlock(mutex); }
+        #if __APPLE__
+            #include <os/lock.h>
+            #define FF_THREAD_MUTEX_INITIALIZER OS_UNFAIR_LOCK_INIT
+            typedef os_unfair_lock FFThreadMutex;
+            static inline void ffThreadMutexLock(os_unfair_lock* mutex) { os_unfair_lock_lock(mutex); }
+            static inline void ffThreadMutexUnlock(os_unfair_lock* mutex) { os_unfair_lock_unlock(mutex); }
+        #else
+            #define FF_THREAD_MUTEX_INITIALIZER PTHREAD_MUTEX_INITIALIZER
+            typedef pthread_mutex_t FFThreadMutex;
+            static inline void ffThreadMutexLock(FFThreadMutex* mutex) { pthread_mutex_lock(mutex); }
+            static inline void ffThreadMutexUnlock(FFThreadMutex* mutex) { pthread_mutex_unlock(mutex); }
+        #endif
         static inline FFThreadType ffThreadCreate(void* (* func)(void*), void* data) {
             FFThreadType newThread = 0;
             pthread_create(&newThread, NULL, func, data);
@@ -57,8 +65,8 @@
                     struct timespec ts;
                     if (clock_gettime(CLOCK_REALTIME, &ts) == 0)
                     {
-                        ts.tv_sec += ts.tv_sec / 1000;
-                        ts.tv_nsec += (ts.tv_nsec % 1000) * 1000000;
+                        ts.tv_sec += timeout / 1000;
+                        ts.tv_nsec += (timeout % 1000) * 1000000;
                         if (pthread_timedjoin_np(thread, NULL, &ts) != 0)
                         {
                             pthread_kill(thread, SIGTERM);

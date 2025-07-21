@@ -31,7 +31,7 @@ static const char* wglHandlePixelFormat(WGLData* wglData, HWND hWnd)
 {
     PIXELFORMATDESCRIPTOR pfd =
     {
-        sizeof(PIXELFORMATDESCRIPTOR),
+        sizeof(pfd),
         1,
         PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,    //Flags
         PFD_TYPE_RGBA,        // The kind of framebuffer. RGBA or palette.
@@ -81,7 +81,7 @@ static LRESULT CALLBACK wglHandleWndProc(HWND hWnd, UINT message, WPARAM wParam,
 
 static const char* wglDetectOpenGL(FFOpenGLResult* result)
 {
-    FF_LIBRARY_LOAD(opengl32, NULL, "dlopen opengl32" FF_LIBRARY_EXTENSION " failed", "opengl32" FF_LIBRARY_EXTENSION, 1);
+    FF_LIBRARY_LOAD(opengl32, "dlopen opengl32" FF_LIBRARY_EXTENSION " failed", "opengl32" FF_LIBRARY_EXTENSION, 1);
 
     WGLData data = { .result = result };
 

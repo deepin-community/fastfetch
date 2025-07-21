@@ -7,7 +7,6 @@
 #include <ctype.h>
 
 #define FF_PLAYER_DISPLAY_NAME "Media Player"
-#define FF_PLAYER_NUM_FORMAT_ARGS 4
 
 void ffPrintPlayer(FFPlayerOptions* options)
 {
@@ -73,11 +72,11 @@ void ffPrintPlayer(FFPlayerOptions* options)
     }
     else
     {
-        FF_PRINT_FORMAT_CHECKED(FF_PLAYER_DISPLAY_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, FF_PLAYER_NUM_FORMAT_ARGS, ((FFformatarg[]){
-            {FF_FORMAT_ARG_TYPE_STRBUF, &playerPretty, "player"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &media->player, "name"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &media->playerId, "id"},
-            {FF_FORMAT_ARG_TYPE_STRBUF, &media->url, "url"},
+        FF_PRINT_FORMAT_CHECKED(FF_PLAYER_DISPLAY_NAME, 0, &options->moduleArgs, FF_PRINT_TYPE_DEFAULT, ((FFformatarg[]){
+            FF_FORMAT_ARG(playerPretty, "player"),
+            FF_FORMAT_ARG(media->player, "name"),
+            FF_FORMAT_ARG(media->playerId, "id"),
+            FF_FORMAT_ARG(media->url, "url"),
         }));
     }
 }
@@ -119,43 +118,28 @@ void ffGeneratePlayerJsonConfig(FFPlayerOptions* options, yyjson_mut_doc* doc, y
 
 void ffGeneratePlayerJsonResult(FF_MAYBE_UNUSED FFMediaOptions* options, yyjson_mut_doc* doc, yyjson_mut_val* module)
 {
-    const FFMediaResult* media = ffDetectMedia();
-
-    if(media->error.length > 0)
-    {
-        yyjson_mut_obj_add_strbuf(doc, module, "error", &media->error);
-        return;
-    }
-
-    yyjson_mut_val* obj = yyjson_mut_obj_add_obj(doc, module, "result");
-    yyjson_mut_obj_add_strbuf(doc, obj, "player", &media->player);
-    yyjson_mut_obj_add_strbuf(doc, obj, "playerId", &media->playerId);
-    yyjson_mut_obj_add_strbuf(doc, obj, "url", &media->url);
+    yyjson_mut_obj_add_str(doc, module, "error", "Player module is an alias of Media module");
 }
 
-void ffPrintPlayerHelpFormat(void)
-{
-    FF_PRINT_MODULE_FORMAT_HELP_CHECKED(FF_PLAYER_MODULE_NAME, "{1}", FF_PLAYER_NUM_FORMAT_ARGS, ((const char* []) {
-        "Pretty player name - player",
-        "Player name - name",
-        "Player Identifier - id",
-        "URL name - url",
-    }));
-}
+static FFModuleBaseInfo ffModuleInfo = {
+    .name = FF_PLAYER_MODULE_NAME,
+    .description = "Print music player name",
+    .parseCommandOptions = (void*) ffParsePlayerCommandOptions,
+    .parseJsonObject = (void*) ffParsePlayerJsonObject,
+    .printModule = (void*) ffPrintPlayer,
+    .generateJsonResult = (void*) ffGeneratePlayerJsonResult,
+    .generateJsonConfig = (void*) ffGeneratePlayerJsonConfig,
+    .formatArgs = FF_FORMAT_ARG_LIST(((FFModuleFormatArg[]) {
+        {"Pretty player name", "player"},
+        {"Player name", "name"},
+        {"Player Identifier", "id"},
+        {"URL name", "url"},
+    }))
+};
 
 void ffInitPlayerOptions(FFPlayerOptions* options)
 {
-    ffOptionInitModuleBaseInfo(
-        &options->moduleInfo,
-        FF_PLAYER_MODULE_NAME,
-        "Print music player name",
-        ffParsePlayerCommandOptions,
-        ffParsePlayerJsonObject,
-        ffPrintPlayer,
-        ffGeneratePlayerJsonResult,
-        ffPrintPlayerHelpFormat,
-        ffGeneratePlayerJsonConfig
-    );
+    options->moduleInfo = ffModuleInfo;
     ffOptionInitModuleArg(&options->moduleArgs, "󰥠");
 }
 
